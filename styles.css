@@ -1,0 +1,83 @@
+.container {
+  display: flex;
+  height: 100vh;
+  background: #f0f2f5;
+}
+
+.sidebar {
+  width: 300px;
+  padding: 20px;
+  background: white;
+  box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+}
+
+.upload-area {
+  border: 2px dashed #ccc;
+  padding: 30px;
+  text-align: center;
+  cursor: pointer;
+  margin-bottom: 20px;
+  transition: border-color 0.3s;
+}
+
+.upload-area:hover {
+  border-color: #1890ff;
+}
+
+#fileInput {
+  display: none;
+}
+
+.operations button {
+  display: block;
+  width: 100%;
+  padding: 12px;
+  margin: 10px 0;
+  background: #1890ff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.operations button:hover {
+  background: #40a9ff;
+}
+
+.preview-area {
+  flex: 1;
+  padding: 20px;
+}
+
+#pdfPreview {
+  width: 100%;
+  height: 100%;
+  border: none;
+}
+
+.progress {
+  margin-top: 20px;
+}
+
+#progressBar {
+  height: 8px;
+  background: #e8e8e8;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+#progressBar::after {
+  content: '';
+  display: block;
+  width: 0%;
+  height: 100%;
+  background: #1890ff;
+  transition: width 0.3s;
+}
+
+#status {
+  display: block;
+  margin-top: 10px;
+  color: #666;
+  font-size: 14px;
+}
