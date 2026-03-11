@@ -6,30 +6,340 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <div class="container">
-    <div class="sidebar">
-      <div class="upload-area" id="dropZone">
-        <input type="file" id="fileInput" multiple accept=".pdf">
-        <span>拖放PDF文件或点击选择</span>
+  <div class="app-container">
+    <!-- Top Menu Bar -->
+    <div class="menu-bar">
+      <div class="menu-items">
+        <div class="menu-item" data-action="file">文件</div>
+        <div class="menu-item" data-action="edit">编辑</div>
+        <div class="menu-item" data-action="view">视图</div>
+        <div class="menu-item" data-action="tools">工具</div>
+        <div class="menu-item" data-action="help">帮助</div>
       </div>
-      
-      <div class="operations">
-        <button onclick="handleMerge()">合并PDF</button>
-        <button onclick="handleSplit()">拆分PDF</button>
-        <button onclick="handleWatermark()">添加水印</button>
-      </div>
-      
-      <div class="progress">
-        <div id="progressBar"></div>
-        <span id="status">准备就绪</span>
+      <div class="app-title">PDF Editor</div>
+      <div class="window-controls">
+        <span class="window-btn minimize">─</span>
+        <span class="window-btn maximize">□</span>
+        <span class="window-btn close">×</span>
       </div>
     </div>
-    
-    <div class="preview-area">
-      <iframe id="pdfPreview"></iframe>
+
+    <!-- Toolbar -->
+    <div class="toolbar-main">
+      <div class="toolbar-group">
+        <button class="toolbar-btn" id="openFileBtn" title="打开文件">
+          <span class="icon">📂</span>
+          <span>打开</span>
+        </button>
+        <button class="toolbar-btn" id="saveBtn" title="保存">
+          <span class="icon">💾</span>
+          <span>保存</span>
+        </button>
+      </div>
+      <div class="toolbar-divider"></div>
+      <div class="toolbar-group">
+        <button class="toolbar-btn" id="undoToolbarBtn" title="撤销">
+          <span class="icon">↩️</span>
+        </button>
+        <button class="toolbar-btn" id="redoToolbarBtn" title="重做">
+          <span class="icon">↪️</span>
+        </button>
+      </div>
+      <div class="toolbar-divider"></div>
+      <div class="toolbar-group">
+        <button class="toolbar-btn" id="zoomOutBtn" title="缩小">
+          <span class="icon">🔍</span>
+        </button>
+        <span class="zoom-level" id="zoomLevel">100%</span>
+        <button class="toolbar-btn" id="zoomInBtn" title="放大">
+          <span class="icon">🔎</span>
+        </button>
+      </div>
+      <div class="toolbar-divider"></div>
+      <div class="toolbar-group">
+        <button class="toolbar-btn tool-btn" data-tool="select" title="选择工具">
+          <span class="icon">↖</span>
+        </button>
+        <button class="toolbar-btn tool-btn" data-tool="hand" title="抓手工具">
+          <span class="icon">✋</span>
+        </button>
+        <button class="toolbar-btn tool-btn" data-tool="text" title="文本工具">
+          <span class="icon">T</span>
+        </button>
+        <button class="toolbar-btn tool-btn" data-tool="image" title="图片工具">
+          <span class="icon">🖼</span>
+        </button>
+        <button class="toolbar-btn tool-btn" data-tool="eraser" title="橡皮擦">
+          <span class="icon">🧽</span>
+        </button>
+      </div>
+      <div class="toolbar-divider"></div>
+      <div class="toolbar-group">
+        <button class="toolbar-btn tool-btn" data-tool="highlight" title="高亮工具">
+          <span class="icon icon-highlight">H</span>
+        </button>
+        <button class="toolbar-btn tool-btn" data-tool="underline" title="下划线工具">
+          <span class="icon">U̲</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content">
+      <!-- Left Sidebar - Page Thumbnails -->
+      <div class="sidebar-left" id="leftSidebar">
+        <div class="sidebar-header">
+          <span class="sidebar-title">页面</span>
+          <button class="sidebar-toggle" id="leftSidebarToggle">▶</button>
+        </div>
+        <div class="thumbnail-container" id="thumbnailContainer">
+          <div class="upload-placeholder" id="uploadPlaceholder">
+            <span class="upload-icon">📄</span>
+            <span>拖放 PDF 文件到此处</span>
+            <span class="upload-hint">或点击"打开"按钮</span>
+          </div>
+          <div class="thumbnail-list" id="thumbnailList" style="display: none;"></div>
+        </div>
+      </div>
+
+      <!-- Center - Canvas Area -->
+      <div class="workspace">
+        <div class="canvas-wrapper" id="canvasWrapper">
+          <div class="canvas-background" id="canvasBackground">
+            <div class="canvas-container">
+              <canvas id="pdfCanvas"></canvas>
+              <div id="editOverlay"></div>
+            </div>
+          </div>
+        </div>
+        <!-- Preview iframe (hidden by default) -->
+        <iframe id="pdfPreview" style="display: none;"></iframe>
+      </div>
+
+      <!-- Right Sidebar - Properties -->
+      <div class="sidebar-right" id="rightSidebar">
+        <div class="sidebar-header">
+          <span class="sidebar-title">属性</span>
+          <button class="sidebar-toggle" id="rightSidebarToggle">◀</button>
+        </div>
+        <div class="properties-container">
+          <!-- Welcome Panel (shown when no file loaded) -->
+          <div class="welcome-panel" id="welcomePanel">
+            <div class="welcome-icon">📝</div>
+            <h3>欢迎使用 PDF Editor</h3>
+            <p>打开一个 PDF 文件开始编辑</p>
+            <button class="btn-primary" id="welcomeOpenBtn">打开文件</button>
+          </div>
+
+          <!-- Tool Properties (shown when tool selected) -->
+          <div class="tool-properties" id="toolProperties" style="display: none;">
+            <div class="property-section">
+              <h4 class="property-title">工具设置</h4>
+
+              <!-- Eraser Options -->
+              <div class="property-group" id="eraserOptions" style="display: none;">
+                <label>橡皮擦大小</label>
+                <div class="slider-container">
+                  <input type="range" id="eraserSize" min="10" max="100" value="20">
+                  <span id="eraserSizeValue">20</span>
+                </div>
+              </div>
+
+              <!-- Text Options -->
+              <div class="property-group" id="textOptions" style="display: none;">
+                <label>字体</label>
+                <div class="select-container">
+                  <select id="fontFamily">
+                    <option value="Arial">Arial</option>
+                    <option value="Times New Roman">Times New Roman</option>
+                    <option value="Helvetica">Helvetica</option>
+                    <option value="Courier New">Courier New</option>
+                    <option value="Georgia">Georgia</option>
+                    <option value="Verdana">Verdana</option>
+                    <option value="Tahoma">Tahoma</option>
+                    <option value="Trebuchet MS">Trebuchet MS</option>
+                    <option value="Impact">Impact</option>
+                    <option value="Comic Sans MS">Comic Sans MS</option>
+                    <option value="SimSun">SimSun (宋体)</option>
+                    <option value="Microsoft YaHei">Microsoft YaHei (微软雅黑)</option>
+                    <option value="SimHei">SimHei (黑体)</option>
+                    <option value="KaiTi">KaiTi (楷体)</option>
+                  </select>
+                </div>
+                <label>字体大小</label>
+                <div class="slider-container">
+                  <input type="range" id="fontSize" min="8" max="72" value="16">
+                  <span id="fontSizeValue">16</span>
+                </div>
+                <label>字体颜色</label>
+                <div class="color-picker-container">
+                  <input type="color" id="textColor" value="#000000">
+                  <span id="textColorValue">#000000</span>
+                </div>
+              </div>
+
+              <!-- Image Options -->
+              <div class="property-group" id="imageOptions" style="display: none;">
+                <button class="btn-secondary" id="selectImageBtn">选择图片</button>
+                <span id="selectedImageName" class="image-name"></span>
+              </div>
+
+              <!-- Highlight Options -->
+              <div class="property-group" id="highlightOptions" style="display: none;">
+                <label>高亮颜色</label>
+                <div class="color-picker-container">
+                  <input type="color" id="highlightColor" value="#ffff00">
+                  <span id="highlightColorValue">#ffff00</span>
+                </div>
+              </div>
+
+              <!-- Underline Options -->
+              <div class="property-group" id="underlineOptions" style="display: none;">
+                <label>下划线颜色</label>
+                <div class="color-picker-container">
+                  <input type="color" id="underlineColor" value="#ff0000">
+                  <span id="underlineColorValue">#ff0000</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Page Navigation -->
+            <div class="property-section" id="pageNavSection" style="display: none;">
+              <h4 class="property-title">页面导航</h4>
+              <div class="page-nav">
+                <button class="nav-btn" id="prevPageBtn">
+                  <span>◀</span>
+                </button>
+                <div class="page-input-group">
+                  <input type="number" id="pageInput" min="1" value="1">
+                  <span class="page-separator">/</span>
+                  <span id="totalPages">1</span>
+                </div>
+                <button class="nav-btn" id="nextPageBtn">
+                  <span>▶</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="property-section" id="actionsSection" style="display: none;">
+              <h4 class="property-title">操作</h4>
+              <div class="action-buttons">
+                <button class="action-btn" id="undoBtn">撤销</button>
+                <button class="action-btn" id="clearBtn">清除所有</button>
+                <button class="action-btn btn-save" id="saveEditBtn">保存 PDF</button>
+              </div>
+            </div>
+
+            <!-- Page Management -->
+            <div class="property-section" id="pageManagementSection" style="display: none;">
+              <h4 class="property-title">页面管理</h4>
+              <div class="page-management-buttons">
+                <button class="action-btn" id="rotateLeftBtn" title="逆时针旋转 90°">↺ 左旋</button>
+                <button class="action-btn" id="rotateRightBtn" title="顺时针旋转 90°">↻ 右旋</button>
+                <button class="action-btn" id="deletePageBtn" title="删除当前页">🗑️ 删除</button>
+              </div>
+            </div>
+
+            <!-- Export Options -->
+            <div class="property-section" id="exportSection" style="display: none;">
+              <h4 class="property-title">导出</h4>
+              <div class="export-buttons">
+                <button class="action-btn" id="exportCurrentPageBtn">导出当前页为图片</button>
+                <button class="action-btn" id="exportAllPagesBtn">导出所有页为图片</button>
+              </div>
+            </div>
+
+            <!-- Security Options -->
+            <div class="property-section" id="securitySection" style="display: none;">
+              <h4 class="property-title">安全</h4>
+              <div class="security-options">
+                <button class="action-btn" id="protectPdfBtn">设置密码保护</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Quick Actions (shown when file loaded) -->
+          <div class="quick-actions" id="quickActions" style="display: none;">
+            <h4 class="property-title">快速操作</h4>
+            <button class="action-btn" id="quickMergeBtn">合并 PDF</button>
+            <button class="action-btn" id="quickSplitBtn">拆分 PDF</button>
+            <button class="action-btn" id="quickWatermarkBtn">添加水印</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Status Bar -->
+    <div class="status-bar">
+      <div class="status-left">
+        <span id="statusMessage">准备就绪</span>
+      </div>
+      <div class="status-right">
+        <span id="pageStatus">页面：--</span>
+        <span class="status-divider">|</span>
+        <span id="dimensionsStatus">尺寸：--</span>
+        <span class="status-divider">|</span>
+        <span id="zoomStatus">100%</span>
+      </div>
     </div>
   </div>
 
+  <!-- Hidden file inputs -->
+  <input type="file" id="fileInput" multiple accept=".pdf" style="display: none;">
+  <input type="file" id="imageInput" accept="image/*" style="display: none;">
+
+  <!-- Help Modal -->
+  <div class="modal-overlay" id="helpModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>PDF Editor 使用指南</h3>
+        <button class="modal-close" id="closeHelpModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="help-section">
+          <h4>菜单功能</h4>
+          <ul>
+            <li><strong>文件</strong> - 打开、保存 PDF 文件</li>
+            <li><strong>编辑</strong> - 撤销、重做操作</li>
+            <li><strong>视图</strong> - 缩放、页面显示设置</li>
+            <li><strong>工具</strong> - 选择各种编辑工具</li>
+            <li><strong>帮助</strong> - 查看本帮助文档</li>
+          </ul>
+        </div>
+        <div class="help-section">
+          <h4>工具说明</h4>
+          <ul>
+            <li><strong>选择 (↖)</strong> - 选择和移动对象</li>
+            <li><strong>抓手 (✋)</strong> - 拖动画布视图</li>
+            <li><strong>文本 (T)</strong> - 添加文本注释</li>
+            <li><strong>图片 (🖼)</strong> - 插入图片</li>
+            <li><strong>橡皮擦 (🧽)</strong> - 擦除标注</li>
+            <li><strong>高亮 (H)</strong> - 高亮文本</li>
+            <li><strong>下划线 (U̲)</strong> - 给文本添加下划线</li>
+          </ul>
+        </div>
+        <div class="help-section">
+          <h4>快捷键</h4>
+          <ul>
+            <li><strong>Ctrl/Cmd + O</strong> - 打开文件</li>
+            <li><strong>Ctrl/Cmd + S</strong> - 保存文件</li>
+            <li><strong>Ctrl/Cmd + Z</strong> - 撤销</li>
+            <li><strong>Ctrl/Cmd + Y</strong> - 重做</li>
+            <li><strong>Ctrl/Cmd + +</strong> - 放大</li>
+            <li><strong>Ctrl/Cmd + -</strong> - 缩小</li>
+            <li><strong>Ctrl/Cmd + 0</strong> - 重置缩放</li>
+            <li><strong>Delete</strong> - 删除选中对象</li>
+          </ul>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-primary" id="closeHelpModalBtn">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="pdf-editor.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>
