@@ -20,24 +20,43 @@ function validateNumber(value, name) {
   return value;
 }
 
+// Shared helper: Load PDF document with error handling
+// Avoids duplicating the same file read + load pattern in every function
+async function loadPdfDocument(filePath) {
+  validateString(filePath, 'filePath');
+  try {
+    const fileData = await fs.readFile(filePath);
+    return await PDFDocument.load(fileData);
+  } catch (error) {
+    throw new Error(`无法读取 PDF 文件：${error.message}`);
+  }
+}
+
 const { PDFDocument, rgb, StandardFonts, degrees } = require('pdf-lib');
 const { PDFName, PDFDict, PDFNumber, PDFString, PDFArray, PDFRef } = require('pdf-lib');
 const fs = require('fs').promises;
 
 async function mergePDFs(filePaths) {
   validateArray(filePaths, 'filePaths');
+
+  // Read and load all PDFs in parallel for efficiency
+  const pdfDocs = await Promise.all(
+    filePaths.map(async (filePath) => {
+      validateString(filePath, 'filePath');
+      try {
+        const fileData = await fs.readFile(filePath);
+        return await PDFDocument.load(fileData);
+      } catch (error) {
+        throw new Error(`无法读取 PDF 文件 ${filePath}: ${error.message}`);
+      }
+    })
+  );
+
   const mergedPdf = await PDFDocument.create();
 
-  for (const filePath of filePaths) {
-    validateString(filePath, 'filePath');
-    try {
-      const fileData = await fs.readFile(filePath);
-      const pdfDoc = await PDFDocument.load(fileData);
-      const pages = await mergedPdf.copyPages(pdfDoc, pdfDoc.getPageIndices());
-      pages.forEach(page => mergedPdf.addPage(page));
-    } catch (error) {
-      throw new Error(`无法读取 PDF 文件 ${filePath}: ${error.message}`);
-    }
+  for (const pdfDoc of pdfDocs) {
+    const pages = await mergedPdf.copyPages(pdfDoc, pdfDoc.getPageIndices());
+    pages.forEach(page => mergedPdf.addPage(page));
   }
 
   const mergedBytes = await mergedPdf.save();
@@ -48,15 +67,7 @@ async function splitPDF(filePath, ranges) {
   validateString(filePath, 'filePath');
   validateArray(ranges, 'ranges');
 
-  let fileData;
-  let pdfDoc;
-
-  try {
-    fileData = await fs.readFile(filePath);
-    pdfDoc = await PDFDocument.load(fileData);
-  } catch (error) {
-    throw new Error(`无法读取 PDF 文件：${error.message}`);
-  }
+  const pdfDoc = await loadPdfDocument(filePath);
 
   const totalPages = pdfDoc.getPageCount();
 
@@ -77,15 +88,7 @@ async function addWatermark(filePath, text) {
   validateString(filePath, 'filePath');
   validateString(text, 'text');
 
-  let fileData;
-  let pdfDoc;
-
-  try {
-    fileData = await fs.readFile(filePath);
-    pdfDoc = await PDFDocument.load(fileData);
-  } catch (error) {
-    throw new Error(`无法读取 PDF 文件：${error.message}`);
-  }
+  const pdfDoc = await loadPdfDocument(filePath);
 
   const pages = pdfDoc.getPages();
   const font = await pdfDoc.embedFont('Helvetica');
@@ -112,17 +115,7 @@ async function addWatermark(filePath, text) {
  * @returns {Promise<object>} PDF document info
  */
 async function loadPDF(filePath) {
-  validateString(filePath, 'filePath');
-
-  let fileData;
-  let pdfDoc;
-
-  try {
-    fileData = await fs.readFile(filePath);
-    pdfDoc = await PDFDocument.load(fileData);
-  } catch (error) {
-    throw new Error(`无法读取 PDF 文件：${error.message}`);
-  }
+  const pdfDoc = await loadPdfDocument(filePath);
 
   return {
     pageCount: pdfDoc.getPageCount(),
@@ -433,7 +426,11 @@ async function getBookmarks(filePath) {
     return [];
   }
 
-  const outlines = outlinesRef;
+  // Look up the actual Outlines object using the PDF context
+  const outlines = pdfDoc.context.lookup(outlinesRef);
+  if (!outlines || typeof outlines.get !== 'function') {
+    return [];
+  }
 
   // Get the First bookmark
   const firstRef = outlines.get(PDFName.of('First'));
@@ -445,8 +442,8 @@ async function getBookmarks(filePath) {
   const bookmarks = [];
 
   function parseBookmark(bookmarkRef, level = 0) {
-    const bookmark = bookmarkRef.lookup();
-    if (!bookmark) return null;
+    const bookmark = pdfDoc.context.lookup(bookmarkRef);
+    if (!bookmark || typeof bookmark.get !== 'function') return null;
 
     const title = bookmark.get(PDFName.of('Title'));
     const dest = bookmark.get(PDFName.of('Dest'));
@@ -520,8 +517,8 @@ async function getBookmarks(filePath) {
 
     // Get Next reference
     try {
-      const current = currentRef.lookup();
-      const nextRef = current ? current.get(PDFName.of('Next')) : null;
+      const current = pdfDoc.context.lookup(currentRef);
+      const nextRef = current && typeof current.get === 'function' ? current.get(PDFName.of('Next')) : null;
       currentRef = nextRef;
     } catch (e) {
       break;

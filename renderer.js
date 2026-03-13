@@ -1,7 +1,7 @@
 // PDF Editor Renderer Process
 
 // Debug mode - set to true to enable detailed logging
-window.DEBUG_MODE = false;
+window.DEBUG_MODE = true;
 
 // =============================================================================
 // Configuration - Cache sizes and performance settings
@@ -77,6 +77,7 @@ let currentOperation = null;
 let pdfEditor = null;
 let currentPdfPath = null;
 let currentPage = 1;
+let selectedPages = new Set(); // Track selected pages for multi-select delete
 let totalPages = 0;
 let selectedImageData = null;
 let selectedImageName = '';
@@ -261,10 +262,17 @@ window.renderPDFPage = async (filePath, pageNum, canvas, scale) => {
       pdfPageCache.set(cacheKey, page);
     }
 
-    const viewport = page.getViewport({ scale });
+    // Use devicePixelRatio for crisp rendering on high-DPI screens
+    const pixelRatio = window.devicePixelRatio || 1;
+    const viewport = page.getViewport({ scale: scale * pixelRatio });
 
+    // Set actual canvas size (in device pixels)
     canvas.width = viewport.width;
     canvas.height = viewport.height;
+
+    // Set CSS display size (in CSS pixels)
+    canvas.style.width = `${viewport.width / pixelRatio}px`;
+    canvas.style.height = `${viewport.height / pixelRatio}px`;
 
     const ctx = canvas.getContext('2d');
 
@@ -289,8 +297,8 @@ window.renderPDFPage = async (filePath, pageNum, canvas, scale) => {
     }
 
     return {
-      width: viewport.width,
-      height: viewport.height,
+      width: viewport.width / pixelRatio,
+      height: viewport.height / pixelRatio,
       pageNum
     };
   } catch (error) {
@@ -504,135 +512,6 @@ function initEventListeners() {
     });
   });
 
-  // Bookmarks state
-  let currentBookmarks = [];
-
-  // Bookmark functions
-  async function loadBookmarks() {
-    if (!currentPdfPath) return;
-
-    try {
-      const bookmarks = await window.pdfAPI.getBookmarks(currentPdfPath);
-      currentBookmarks = bookmarks || [];
-      renderBookmarks();
-    } catch (error) {
-      console.error('Failed to load bookmarks:', error);
-    }
-  }
-
-  function renderBookmarks() {
-    const bookmarksList = document.getElementById('bookmarksList');
-    if (!bookmarksList) return;
-
-    if (currentBookmarks.length === 0) {
-      bookmarksList.innerHTML = '<div class="bookmarks-empty">暂无书签<br>点击"添加书签"创建</div>';
-      return;
-    }
-
-    bookmarksList.innerHTML = currentBookmarks.map((bm, index) => `
-      <div class="bookmark-item" data-index="${index}">
-        <span class="bookmark-title">${escapeHtml(bm.title)}</span>
-        <span class="bookmark-page">第 ${bm.page} 页</span>
-        <button class="bookmark-delete" data-index="${index}" title="删除书签">&times;</button>
-      </div>
-    `).join('');
-
-    // Add click handlers
-    bookmarksList.querySelectorAll('.bookmark-item').forEach(item => {
-      item.addEventListener('click', (e) => {
-        if (e.target.classList.contains('bookmark-delete')) return;
-        const index = parseInt(item.dataset.index);
-        const bm = currentBookmarks[index];
-        if (bm.page) {
-          goToPage(bm.page);
-        }
-      });
-    });
-
-    bookmarksList.querySelectorAll('.bookmark-delete').forEach(btn => {
-      btn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        const index = parseInt(btn.dataset.index);
-        await deleteBookmark(index);
-      });
-    });
-  }
-
-  async function deleteBookmark(index) {
-    if (!currentPdfPath) return;
-
-    const bm = currentBookmarks[index];
-    currentBookmarks.splice(index, 1);
-
-    try {
-      const buffer = await window.pdfAPI.addBookmarks(currentPdfPath, currentBookmarks);
-      await window.pdfAPI.writeFile(currentPdfPath, Array.from(buffer));
-      renderBookmarks();
-    } catch (error) {
-      console.error('Failed to delete bookmark:', error);
-      currentBookmarks.splice(index, 0, bm); // restore on error
-    }
-  }
-
-  // Bookmark modal
-  const bookmarkModal = document.getElementById('bookmarkModal');
-  const addBookmarkBtn = document.getElementById('addBookmarkBtn');
-  const closeBookmarkModal = document.getElementById('closeBookmarkModal');
-  const cancelBookmarkBtn = document.getElementById('cancelBookmarkBtn');
-  const saveBookmarkBtn = document.getElementById('saveBookmarkBtn');
-  const bookmarkTitleInput = document.getElementById('bookmarkTitle');
-  const bookmarkPageInput = document.getElementById('bookmarkPage');
-
-  let editingBookmarkIndex = -1;
-
-  function openBookmarkModal(pageNum = null) {
-    editingBookmarkIndex = -1;
-    document.getElementById('bookmarkModalTitle').textContent = '添加书签';
-    bookmarkTitleInput.value = '';
-    bookmarkPageInput.value = pageNum || currentPage;
-    bookmarkModal.classList.add('active');
-    bookmarkTitleInput.focus();
-  }
-
-  function closeBookmarkModalFunc() {
-    bookmarkModal.classList.remove('active');
-  }
-
-  async function saveBookmark() {
-    const title = bookmarkTitleInput.value.trim();
-    const page = parseInt(bookmarkPageInput.value);
-
-    if (!title) {
-      alert('请输入书签标题');
-      return;
-    }
-    if (!page || page < 1 || page > totalPages) {
-      alert('请输入有效的页码');
-      return;
-    }
-
-    if (!currentPdfPath) return;
-
-    const newBookmark = { title, page };
-    currentBookmarks.push(newBookmark);
-
-    try {
-      const buffer = await window.pdfAPI.addBookmarks(currentPdfPath, currentBookmarks);
-      await window.pdfAPI.writeFile(currentPdfPath, Array.from(buffer));
-      closeBookmarkModalFunc();
-      renderBookmarks();
-    } catch (error) {
-      console.error('Failed to save bookmark:', error);
-      currentBookmarks.pop();
-      alert('保存书签失败');
-    }
-  }
-
-  if (addBookmarkBtn) addBookmarkBtn.addEventListener('click', () => openBookmarkModal());
-  if (closeBookmarkModal) closeBookmarkModal.addEventListener('click', closeBookmarkModalFunc);
-  if (cancelBookmarkBtn) cancelBookmarkBtn.addEventListener('click', closeBookmarkModalFunc);
-  if (saveBookmarkBtn) saveBookmarkBtn.addEventListener('click', saveBookmark);
-
   // Zoom controls
   const zoomInBtn = document.getElementById('zoomInBtn');
   const zoomOutBtn = document.getElementById('zoomOutBtn');
@@ -737,7 +616,132 @@ function initEventListeners() {
   setupToolOptions();
 }
 
-// Setup tool option controls
+// Bookmarks state
+let currentBookmarks = [];
+
+// Bookmark functions
+async function loadBookmarks() {
+    if (!currentPdfPath) return;
+
+    try {
+      const bookmarks = await window.pdfAPI.getBookmarks(currentPdfPath);
+      currentBookmarks = bookmarks || [];
+      renderBookmarks();
+    } catch (error) {
+      console.error('Failed to load bookmarks:', error);
+    }
+  }
+
+  function renderBookmarks() {
+    const bookmarksList = document.getElementById('bookmarksList');
+    if (!bookmarksList) return;
+
+    if (currentBookmarks.length === 0) {
+      bookmarksList.innerHTML = '<div class="bookmarks-empty">暂无书签<br>点击"添加书签"创建</div>';
+      return;
+    }
+
+    bookmarksList.innerHTML = currentBookmarks.map((bm, index) => `
+      <div class="bookmark-item" data-index="${index}">
+        <span class="bookmark-title">${escapeHtml(bm.title)}</span>
+        <span class="bookmark-page">第 ${bm.page} 页</span>
+        <button class="bookmark-delete" data-index="${index}" title="删除书签">&times;</button>
+      </div>
+    `).join('');
+
+    // Add click handlers
+    bookmarksList.querySelectorAll('.bookmark-item').forEach(item => {
+      item.addEventListener('click', (e) => {
+        if (e.target.classList.contains('bookmark-delete')) return;
+        const index = parseInt(item.dataset.index);
+        const bm = currentBookmarks[index];
+        if (bm.page) {
+          goToPage(bm.page);
+        }
+      });
+    });
+
+    bookmarksList.querySelectorAll('.bookmark-delete').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const index = parseInt(btn.dataset.index);
+        await deleteBookmark(index);
+      });
+    });
+  }
+
+  async function deleteBookmark(index) {
+    if (!currentPdfPath) return;
+
+    const bm = currentBookmarks[index];
+    currentBookmarks.splice(index, 1);
+
+    try {
+      const buffer = await window.pdfAPI.addBookmarks(currentPdfPath, currentBookmarks);
+      await window.pdfAPI.writeFile(currentPdfPath, Array.from(buffer));
+      renderBookmarks();
+    } catch (error) {
+      console.error('Failed to delete bookmark:', error);
+      currentBookmarks.splice(index, 0, bm); // restore on error
+    }
+  }
+
+  // Bookmark modal
+  const bookmarkModal = document.getElementById('bookmarkModal');
+  const addBookmarkBtn = document.getElementById('addBookmarkBtn');
+  const closeBookmarkModal = document.getElementById('closeBookmarkModal');
+  const cancelBookmarkBtn = document.getElementById('cancelBookmarkBtn');
+  const saveBookmarkBtn = document.getElementById('saveBookmarkBtn');
+  const bookmarkTitleInput = document.getElementById('bookmarkTitle');
+  const bookmarkPageInput = document.getElementById('bookmarkPage');
+
+  function openBookmarkModal(pageNum = null) {
+    document.getElementById('bookmarkModalTitle').textContent = '添加书签';
+    bookmarkTitleInput.value = '';
+    bookmarkPageInput.value = pageNum || currentPage;
+    bookmarkModal.classList.add('active');
+    bookmarkTitleInput.focus();
+  }
+
+  function closeBookmarkModalFunc() {
+    bookmarkModal.classList.remove('active');
+  }
+
+  async function saveBookmark() {
+    const title = bookmarkTitleInput.value.trim();
+    const page = parseInt(bookmarkPageInput.value);
+
+    if (!title) {
+      alert('请输入书签标题');
+      return;
+    }
+    if (!page || page < 1 || page > totalPages) {
+      alert('请输入有效的页码');
+      return;
+    }
+
+    if (!currentPdfPath) return;
+
+    const newBookmark = { title, page };
+    currentBookmarks.push(newBookmark);
+
+    try {
+      const buffer = await window.pdfAPI.addBookmarks(currentPdfPath, currentBookmarks);
+      await window.pdfAPI.writeFile(currentPdfPath, Array.from(buffer));
+      closeBookmarkModalFunc();
+      renderBookmarks();
+    } catch (error) {
+      console.error('Failed to save bookmark:', error);
+      currentBookmarks.pop();
+      alert('保存书签失败');
+    }
+  }
+
+  if (addBookmarkBtn) addBookmarkBtn.addEventListener('click', () => openBookmarkModal());
+  if (closeBookmarkModal) closeBookmarkModal.addEventListener('click', closeBookmarkModalFunc);
+  if (cancelBookmarkBtn) cancelBookmarkBtn.addEventListener('click', closeBookmarkModalFunc);
+  if (saveBookmarkBtn) saveBookmarkBtn.addEventListener('click', saveBookmark);
+
 function setupToolOptions() {
   // Eraser size
   const eraserSizeSlider = document.getElementById('eraserSize');
@@ -880,6 +884,8 @@ async function handleSelectedFiles(files) {
 
     // Clear thumbnail cache when opening a new PDF
     renderedThumbnails.clear();
+    clearPageSelection(); // Clear page selection when opening new PDF
+
     if (thumbnailObserver) {
       thumbnailObserver.disconnect();
       thumbnailObserver = null;
@@ -978,9 +984,15 @@ async function generateThumbnails() {
     thumbnailItem.appendChild(pageNum);
     thumbnailList.appendChild(thumbnailItem);
 
-    // Add click handler
-    thumbnailItem.addEventListener('click', () => {
-      goToPage(i);
+    // Add click handler with Ctrl/Cmd for multi-select
+    thumbnailItem.addEventListener('click', (e) => {
+      if (e.ctrlKey || e.metaKey) {
+        // Multi-select mode: toggle selection
+        togglePageSelection(i);
+      } else {
+        // Normal mode: go to page
+        goToPage(i);
+      }
     });
   }
 
@@ -1222,7 +1234,7 @@ async function renderPageCanvas(pageNum) {
     pdfEditor ? pdfEditor.scale : 1.0
   );
 
-  // Set container size
+  // Set container size based on CSS dimensions from pageInfo
   canvasContainer.style.width = `${pageInfo.width}px`;
   canvasContainer.style.height = `${pageInfo.height}px`;
 
@@ -1323,7 +1335,8 @@ async function initEditor() {
     updateStatus('正在加载编辑器...');
 
     pdfEditor = new PDFEditor();
-    const info = await pdfEditor.init(pdfCanvas, currentPdfPath);
+    // Initialize editor (pdfCanvas is null in multi-page mode, each page has its own canvas)
+    const info = await pdfEditor.init(null, currentPdfPath);
     totalPages = info.totalPages;
     currentPage = 1;
 
@@ -1505,6 +1518,43 @@ async function goToNextPage() {
   if (currentPage < totalPages) {
     await goToPage(currentPage + 1);
   }
+}
+
+// Toggle page selection (for multi-select delete)
+function togglePageSelection(pageNum) {
+  if (selectedPages.has(pageNum)) {
+    selectedPages.delete(pageNum);
+  } else {
+    selectedPages.add(pageNum);
+  }
+  updatePageSelectionUI();
+  updateSelectionStatus();
+}
+
+// Update page thumbnail selection UI
+function updatePageSelectionUI() {
+  document.querySelectorAll('.thumbnail-item').forEach(item => {
+    const page = parseInt(item.dataset.page);
+    item.classList.toggle('selected', selectedPages.has(page));
+  });
+}
+
+// Update selection status display
+function updateSelectionStatus() {
+  if (pageStatus) {
+    if (selectedPages.size > 0) {
+      pageStatus.textContent = `已选择 ${selectedPages.size} 页 / 页面：${currentPage} / ${totalPages}`;
+    } else {
+      pageStatus.textContent = `页面：${currentPage} / ${totalPages}`;
+    }
+  }
+}
+
+// Clear all page selections
+function clearPageSelection() {
+  selectedPages.clear();
+  updatePageSelectionUI();
+  updateSelectionStatus();
 }
 
 // Update page info
@@ -1743,18 +1793,54 @@ async function handleDeletePage() {
       return;
     }
 
-    if (!confirm(`确定要删除第 ${currentPage} 页吗？`)) {
+    // Determine which pages to delete
+    let pagesToDelete;
+    if (selectedPages.size > 0) {
+      // Use selected pages
+      pagesToDelete = Array.from(selectedPages).sort((a, b) => a - b);
+    } else {
+      // Use current page
+      pagesToDelete = [currentPage];
+    }
+
+    // First confirmation: show which pages will be deleted
+    const pageList = pagesToDelete.length <= 10
+      ? pagesToDelete.join(', ')
+      : `${pagesToDelete.slice(0, 10).join(', ')}...`;
+
+    if (!confirm(`将删除以下 ${pagesToDelete.length} 页：${pageList}\n确定要删除吗？`)) {
       return;
     }
 
     updateStatus('正在删除页面...');
-    const deletedBuffer = await window.pdfAPI.deletePages(currentPdfPath, [currentPage]);
 
-    // Save the modified file back to original path
-    await window.pdfAPI.writeFile(currentPdfPath, deletedBuffer);
-    updateStatus(`页面已删除`);
+    // Delete the pages
+    const deletedBuffer = await window.pdfAPI.deletePages(currentPdfPath, pagesToDelete);
 
-    // Reload the PDF to show changes
+    // Ask user how to save
+    const saveChoice = confirm('点击"确定"保存到原文件\n点击"取消"另存为新文件');
+
+    if (saveChoice) {
+      // Save to original path
+      await window.pdfAPI.writeFile(currentPdfPath, deletedBuffer);
+      updateStatus(`已删除 ${pagesToDelete.length} 页并保存`);
+    } else {
+      // Save as new file
+      const result = await window.pdfAPI.saveDialog('modified.pdf');
+      if (!result.canceled && result.filePath) {
+        await window.pdfAPI.writeFile(result.filePath, deletedBuffer);
+        updateStatus(`已删除 ${pagesToDelete.length} 页并另存为`);
+      } else {
+        updateStatus('已取消保存');
+        // Clear selection and reload to restore UI state since PDF was modified in memory
+        clearPageSelection();
+        await reloadCurrentPDF();
+        return;
+      }
+    }
+
+    // Clear selection and reload
+    clearPageSelection();
     await reloadCurrentPDF();
   } catch (error) {
     handleError(error);
@@ -1903,6 +1989,9 @@ async function handleProtectPDF() {
 async function reloadCurrentPDF() {
   try {
     if (!currentPdfPath) return;
+
+    // Clear any previous page selection
+    clearPageSelection();
 
     // Reload the current PDF info
     const pdfInfo = await window.pdfAPI.loadPDF(currentPdfPath);
