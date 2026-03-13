@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <title>PDF Editor</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg width='32' height='32' viewBox='0 0 64 64' xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='8' y='4' width='48' height='56' rx='6' ry='6' fill='%23E8F3FF'/%3E%3Crect x='10' y='6' width='44' height='52' rx='4' ry='4' fill='%23FFFFFF' stroke='%23165DFF' stroke-width='1.5'/%3E%3Cpath d='M10 6 L20 6 L20 16 Z' fill='%23165DFF'/%3E%3Cpath d='M28 24 L40 36 L38 40 L26 28 Z' fill='%23165DFF'/%3E%3Cpath d='M38 40 L42 44 L36 48 L32 44 Z' fill='%2336CFC9'/%3E%3Cpath d='M48 48 L48 56 M48 52 L52 52 M52 48 L52 56' stroke='%23165DFF' stroke-width='2' stroke-linecap='round'/%3E%3Ctext x='16' y='36' font-size='6' font-weight='bold' fill='%23165DFF'%3EPDF%3C/text%3E%3C/svg%3E" type="image/svg+xml">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -86,34 +87,43 @@
 
     <!-- Main Content -->
     <div class="main-content">
-      <!-- Left Sidebar - Page Thumbnails -->
+      <!-- Left Sidebar - Page Thumbnails & Bookmarks -->
       <div class="sidebar-left" id="leftSidebar">
         <div class="sidebar-header">
-          <span class="sidebar-title">页面</span>
+          <div class="sidebar-tabs">
+            <button class="sidebar-tab active" data-tab="pages">页面</button>
+            <button class="sidebar-tab" data-tab="bookmarks">书签</button>
+          </div>
           <button class="sidebar-toggle" id="leftSidebarToggle">▶</button>
         </div>
-        <div class="thumbnail-container" id="thumbnailContainer">
-          <div class="upload-placeholder" id="uploadPlaceholder">
-            <span class="upload-icon">📄</span>
-            <span>拖放 PDF 文件到此处</span>
-            <span class="upload-hint">或点击"打开"按钮</span>
+        <!-- Pages Tab -->
+        <div class="tab-content active" id="pagesTab">
+          <div class="thumbnail-container" id="thumbnailContainer">
+            <div class="upload-placeholder" id="uploadPlaceholder">
+              <span class="upload-icon">📄</span>
+              <span>拖放 PDF 文件到此处</span>
+              <span class="upload-hint">或点击"打开"按钮</span>
+            </div>
+            <div class="thumbnail-list" id="thumbnailList" style="display: none;"></div>
           </div>
-          <div class="thumbnail-list" id="thumbnailList" style="display: none;"></div>
+        </div>
+        <!-- Bookmarks Tab -->
+        <div class="tab-content" id="bookmarksTab">
+          <div class="bookmarks-container" id="bookmarksContainer">
+            <div class="bookmarks-list" id="bookmarksList"></div>
+            <div class="bookmark-actions">
+              <button class="btn btn-primary" id="addBookmarkBtn">添加书签</button>
+            </div>
+          </div>
         </div>
       </div>
 
       <!-- Center - Canvas Area -->
       <div class="workspace">
         <div class="canvas-wrapper" id="canvasWrapper">
-          <div class="canvas-background" id="canvasBackground">
-            <div class="canvas-container">
-              <canvas id="pdfCanvas"></canvas>
-              <div id="editOverlay"></div>
-            </div>
-          </div>
+          <!-- Multi-page container for continuous scroll -->
+          <div id="pagesContainer" class="pages-container"></div>
         </div>
-        <!-- Preview iframe (hidden by default) -->
-        <iframe id="pdfPreview" style="display: none;"></iframe>
       </div>
 
       <!-- Right Sidebar - Properties -->
@@ -125,7 +135,17 @@
         <div class="properties-container">
           <!-- Welcome Panel (shown when no file loaded) -->
           <div class="welcome-panel" id="welcomePanel">
-            <div class="welcome-icon">📝</div>
+            <div class="welcome-icon">
+              <svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+                <rect x="8" y="4" width="48" height="56" rx="6" ry="6" fill="#E8F3FF"/>
+                <rect x="10" y="6" width="44" height="52" rx="4" ry="4" fill="#FFFFFF" stroke="#165DFF" stroke-width="1.5"/>
+                <path d="M10 6 L20 6 L20 16 Z" fill="#165DFF"/>
+                <path d="M28 24 L40 36 L38 40 L26 28 Z" fill="#165DFF"/>
+                <path d="M38 40 L42 44 L36 48 L32 44 Z" fill="#36CFC9"/>
+                <path d="M48 48 L48 56 M48 52 L52 52 M52 48 L52 56" stroke="#165DFF" stroke-width="2" stroke-linecap="round"/>
+                <text x="16" y="36" font-size="6" font-weight="bold" fill="#165DFF">PDF</text>
+              </svg>
+            </div>
             <h3>欢迎使用 PDF Editor</h3>
             <p>打开一个 PDF 文件开始编辑</p>
             <button class="btn-primary" id="welcomeOpenBtn">打开文件</button>
@@ -335,6 +355,30 @@
       </div>
       <div class="modal-footer">
         <button class="btn-primary" id="closeHelpModalBtn">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bookmark Modal -->
+  <div class="modal-overlay" id="bookmarkModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="bookmarkModalTitle">添加书签</h3>
+        <button class="modal-close" id="closeBookmarkModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="bookmarkTitle">书签标题</label>
+          <input type="text" id="bookmarkTitle" class="form-input" placeholder="输入书签标题">
+        </div>
+        <div class="form-group">
+          <label for="bookmarkPage">跳转页面</label>
+          <input type="number" id="bookmarkPage" class="form-input" min="1" placeholder="页码">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" id="cancelBookmarkBtn">取消</button>
+        <button class="btn-primary" id="saveBookmarkBtn">保存</button>
       </div>
     </div>
   </div>

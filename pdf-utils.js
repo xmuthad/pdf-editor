@@ -1,14 +1,43 @@
+// Input validation helpers
+function validateString(value, name) {
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new Error(`${name} must be a non-empty string`);
+  }
+  return value;
+}
+
+function validateArray(value, name) {
+  if (!Array.isArray(value)) {
+    throw new Error(`${name} must be an array`);
+  }
+  return value;
+}
+
+function validateNumber(value, name) {
+  if (typeof value !== 'number' || isNaN(value)) {
+    throw new Error(`${name} must be a valid number`);
+  }
+  return value;
+}
+
 const { PDFDocument, rgb, StandardFonts, degrees } = require('pdf-lib');
+const { PDFName, PDFDict, PDFNumber, PDFString, PDFArray, PDFRef } = require('pdf-lib');
 const fs = require('fs').promises;
 
 async function mergePDFs(filePaths) {
+  validateArray(filePaths, 'filePaths');
   const mergedPdf = await PDFDocument.create();
 
   for (const filePath of filePaths) {
-    const fileData = await fs.readFile(filePath);
-    const pdfDoc = await PDFDocument.load(fileData);
-    const pages = await mergedPdf.copyPages(pdfDoc, pdfDoc.getPageIndices());
-    pages.forEach(page => mergedPdf.addPage(page));
+    validateString(filePath, 'filePath');
+    try {
+      const fileData = await fs.readFile(filePath);
+      const pdfDoc = await PDFDocument.load(fileData);
+      const pages = await mergedPdf.copyPages(pdfDoc, pdfDoc.getPageIndices());
+      pages.forEach(page => mergedPdf.addPage(page));
+    } catch (error) {
+      throw new Error(`无法读取 PDF 文件 ${filePath}: ${error.message}`);
+    }
   }
 
   const mergedBytes = await mergedPdf.save();
@@ -16,13 +45,25 @@ async function mergePDFs(filePaths) {
 }
 
 async function splitPDF(filePath, ranges) {
-  const fileData = await fs.readFile(filePath);
-  const pdfDoc = await PDFDocument.load(fileData);
+  validateString(filePath, 'filePath');
+  validateArray(ranges, 'ranges');
+
+  let fileData;
+  let pdfDoc;
+
+  try {
+    fileData = await fs.readFile(filePath);
+    pdfDoc = await PDFDocument.load(fileData);
+  } catch (error) {
+    throw new Error(`无法读取 PDF 文件：${error.message}`);
+  }
+
+  const totalPages = pdfDoc.getPageCount();
 
   const result = [];
   for (const range of ranges) {
     // Support both single page (e.g., "5") and range (e.g., "1-3")
-    const pageIndices = parsePageRange(range.trim());
+    const pageIndices = parsePageRange(range.trim(), totalPages);
     const newDoc = await PDFDocument.create();
     const pages = await newDoc.copyPages(pdfDoc, pageIndices);
     pages.forEach(page => newDoc.addPage(page));
@@ -32,25 +73,19 @@ async function splitPDF(filePath, ranges) {
   return result.map(b => Buffer.from(b));
 }
 
-/**
- * Parse page range string to array of 0-indexed page numbers
- * @param {string} range - Page range (e.g., "1-3", "5", "7-9")
- * @returns {number[]} Array of 0-indexed page numbers
- */
-function parsePageRange(range) {
-  if (range.includes('-')) {
-    // Range format: "1-3"
-    const [start, end] = range.split('-').map(Number);
-    return Array.from({ length: end - start + 1 }, (_, i) => start - 1 + i);
-  } else {
-    // Single page: "5"
-    return [Number(range) - 1];
-  }
-}
-
 async function addWatermark(filePath, text) {
-  const fileData = await fs.readFile(filePath);
-  const pdfDoc = await PDFDocument.load(fileData);
+  validateString(filePath, 'filePath');
+  validateString(text, 'text');
+
+  let fileData;
+  let pdfDoc;
+
+  try {
+    fileData = await fs.readFile(filePath);
+    pdfDoc = await PDFDocument.load(fileData);
+  } catch (error) {
+    throw new Error(`无法读取 PDF 文件：${error.message}`);
+  }
 
   const pages = pdfDoc.getPages();
   const font = await pdfDoc.embedFont('Helvetica');
@@ -77,8 +112,18 @@ async function addWatermark(filePath, text) {
  * @returns {Promise<object>} PDF document info
  */
 async function loadPDF(filePath) {
-  const fileData = await fs.readFile(filePath);
-  const pdfDoc = await PDFDocument.load(fileData);
+  validateString(filePath, 'filePath');
+
+  let fileData;
+  let pdfDoc;
+
+  try {
+    fileData = await fs.readFile(filePath);
+    pdfDoc = await PDFDocument.load(fileData);
+  } catch (error) {
+    throw new Error(`无法读取 PDF 文件：${error.message}`);
+  }
+
   return {
     pageCount: pdfDoc.getPageCount(),
     filePath
@@ -92,8 +137,19 @@ async function loadPDF(filePath) {
  * @returns {Promise<Buffer>} Modified PDF buffer
  */
 async function applyEdits(filePath, operations) {
-  const fileData = await fs.readFile(filePath);
-  const pdfDoc = await PDFDocument.load(fileData);
+  validateString(filePath, 'filePath');
+  validateArray(operations, 'operations');
+
+  let fileData;
+  let pdfDoc;
+
+  try {
+    fileData = await fs.readFile(filePath);
+    pdfDoc = await PDFDocument.load(fileData);
+  } catch (error) {
+    throw new Error(`无法读取 PDF 文件：${error.message}`);
+  }
+
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
   // Group operations by page
@@ -203,16 +259,47 @@ async function applyEdits(filePath, operations) {
 
 /**
  * Convert hex color to RGB object
- * @param {string} hex - Hex color string (e.g., '#ff0000')
- * @returns {object} RGB object
+ * @param {string} hex - Hex color string (e.g., '#ff0000' or '#f00')
+ * @returns {object} RGB object with r, g, b values (0-255)
  */
 function hexToRgb(hex) {
+  // Support both #ff0000 and #f00 formats
+  const shorthandRegex = /^#?([a-f\d])([a-f\d])([a-f\d])$/i;
+  hex = hex.replace(shorthandRegex, (m, r, g, b) => r + r + g + g + b + b);
+
   const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
   return result ? {
     r: parseInt(result[1], 16),
     g: parseInt(result[2], 16),
     b: parseInt(result[3], 16)
   } : { r: 0, g: 0, b: 0 };
+}
+
+/**
+ * Parse page range string to array of 0-indexed page numbers
+ * @param {string} range - Page range (e.g., "1-3", "5", "7-9")
+ * @param {number} totalPages - Total pages in PDF for validation
+ * @returns {number[]} Array of 0-indexed page numbers
+ * @throws {Error} If range is invalid or out of bounds
+ */
+function parsePageRange(range, totalPages) {
+  const trimmed = range.trim();
+
+  if (trimmed.includes('-')) {
+    // Range format: "1-3"
+    const [start, end] = trimmed.split('-').map(Number);
+    if (isNaN(start) || isNaN(end) || start < 1 || end > totalPages || start > end) {
+      throw new Error(`无效的页面范围：${range}`);
+    }
+    return Array.from({ length: end - start + 1 }, (_, i) => start - 1 + i);
+  } else {
+    // Single page: "5"
+    const pageNum = Number(trimmed);
+    if (isNaN(pageNum) || pageNum < 1 || pageNum > totalPages) {
+      throw new Error(`无效的页码：${range}`);
+    }
+    return [pageNum - 1];
+  }
 }
 
 /**
@@ -223,8 +310,20 @@ function hexToRgb(hex) {
  * @returns {Promise<Buffer>} Modified PDF buffer
  */
 async function rotatePDF(filePath, pageNumbers, degrees) {
-  const fileData = await fs.readFile(filePath);
-  const pdfDoc = await PDFDocument.load(fileData);
+  validateString(filePath, 'filePath');
+  validateArray(pageNumbers, 'pageNumbers');
+  validateNumber(degrees, 'degrees');
+
+  let fileData;
+  let pdfDoc;
+
+  try {
+    fileData = await fs.readFile(filePath);
+    pdfDoc = await PDFDocument.load(fileData);
+  } catch (error) {
+    throw new Error(`无法读取 PDF 文件：${error.message}`);
+  }
+
   const pages = pdfDoc.getPages();
 
   pageNumbers.forEach(pageNum => {
@@ -245,8 +344,18 @@ async function rotatePDF(filePath, pageNumbers, degrees) {
  * @returns {Promise<Buffer>} Modified PDF buffer
  */
 async function deletePages(filePath, pageNumbers) {
-  const fileData = await fs.readFile(filePath);
-  const pdfDoc = await PDFDocument.load(fileData);
+  validateString(filePath, 'filePath');
+  validateArray(pageNumbers, 'pageNumbers');
+
+  let fileData;
+  let pdfDoc;
+
+  try {
+    fileData = await fs.readFile(filePath);
+    pdfDoc = await PDFDocument.load(fileData);
+  } catch (error) {
+    throw new Error(`无法读取 PDF 文件：${error.message}`);
+  }
 
   // Sort page numbers in descending order to avoid index shifting
   const sortedPages = [...pageNumbers].sort((a, b) => b - a);
@@ -259,82 +368,6 @@ async function deletePages(filePath, pageNumbers) {
 }
 
 /**
- * Convert a PDF page to image buffer
- * @param {string} filePath - Path to PDF file
- * @param {number} pageNum - Page number (1-indexed)
- * @param {string} format - Image format ('png' or 'jpeg')
- * @param {number} scale - Scale factor for rendering
- * @returns {Promise<{buffer: Buffer, width: number, height: number}>} Image buffer and dimensions
- */
-async function convertPageToImage(filePath, pageNum, format = 'png', scale = 2) {
-  const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.mjs');
-  pdfjsLib.GlobalWorkerOptions.workerSrc = require.resolve('pdfjs-dist/legacy/build/pdf.worker.mjs');
-
-  const fileData = await fs.readFile(filePath);
-  const typedArray = new Uint8Array(fileData);
-
-  const pdf = await pdfjsLib.getDocument(typedArray).promise;
-  const page = await pdf.getPage(pageNum);
-  const viewport = page.getViewport({ scale });
-
-  // Create an offscreen canvas
-  const canvas = {
-    width: viewport.width,
-    height: viewport.height,
-    data: new Uint8ClampedArray(viewport.width * viewport.height * 4)
-  };
-
-  const ctx = {
-    canvas,
-    fillStyle: '',
-    imageData: canvas.data,
-    fillRect: function(x, y, w, h) {
-      // Fill with white background
-      for (let i = 0; i < h; i++) {
-        for (let j = 0; j < w; j++) {
-          const idx = ((y + i) * viewport.width + (x + j)) * 4;
-          this.imageData[idx] = 255;
-          this.imageData[idx + 1] = 255;
-          this.imageData[idx + 2] = 255;
-          this.imageData[idx + 3] = 255;
-        }
-      }
-    },
-    drawImage: function(source, x, y) {
-      // Copy image data
-      if (source.data) {
-        for (let i = 0; i < source.height; i++) {
-          for (let j = 0; j < source.width; j++) {
-            const srcIdx = (i * source.width + j) * 4;
-            const dstIdx = ((y + i) * viewport.width + (x + j)) * 4;
-            if (dstIdx + 3 < this.imageData.length) {
-              this.imageData[dstIdx] = source.data[srcIdx];
-              this.imageData[dstIdx + 1] = source.data[srcIdx + 1];
-              this.imageData[dstIdx + 2] = source.data[srcIdx + 2];
-              this.imageData[dstIdx + 3] = source.data[srcIdx + 3];
-            }
-          }
-        }
-      }
-    }
-  };
-
-  await page.render({
-    canvasContext: ctx,
-    viewport: viewport
-  }).promise;
-
-  // Create a simple PNG-like buffer (in reality, we need canvas for proper image encoding)
-  // For now, return the raw RGBA data
-  return {
-    data: canvas.data,
-    width: viewport.width,
-    height: viewport.height,
-    format
-  };
-}
-
-/**
  * Add password protection to a PDF
  * @param {string} filePath - Path to PDF file
  * @param {string} userPassword - Password to open the PDF
@@ -343,8 +376,19 @@ async function convertPageToImage(filePath, pageNum, format = 'png', scale = 2) 
  * @returns {Promise<Buffer>} Encrypted PDF buffer
  */
 async function protectPDF(filePath, userPassword, ownerPassword, permissions) {
-  const fileData = await fs.readFile(filePath);
-  const pdfDoc = await PDFDocument.load(fileData);
+  validateString(filePath, 'filePath');
+  if (userPassword !== undefined) validateString(userPassword, 'userPassword');
+  if (ownerPassword !== undefined) validateString(ownerPassword, 'ownerPassword');
+
+  let fileData;
+  let pdfDoc;
+
+  try {
+    fileData = await fs.readFile(filePath);
+    pdfDoc = await PDFDocument.load(fileData);
+  } catch (error) {
+    throw new Error(`无法读取 PDF 文件：${error.message}`);
+  }
 
   const encryptedPdf = await pdfDoc.save({
     userPassword,
@@ -363,6 +407,228 @@ async function protectPDF(filePath, userPassword, ownerPassword, permissions) {
   return Buffer.from(encryptedPdf);
 }
 
+/**
+ * Get bookmarks from a PDF
+ * @param {string} filePath - Path to PDF file
+ * @returns {Promise<Array>} Array of bookmark objects
+ */
+async function getBookmarks(filePath) {
+  validateString(filePath, 'filePath');
+
+  let fileData;
+  let pdfDoc;
+
+  try {
+    fileData = await fs.readFile(filePath);
+    pdfDoc = await PDFDocument.load(fileData);
+  } catch (error) {
+    throw new Error(`无法读取 PDF 文件：${error.message}`);
+  }
+
+  const catalog = pdfDoc.catalog;
+
+  // Get the Outlines dictionary
+  const outlinesRef = catalog.get(PDFName.of('Outlines'));
+  if (!outlinesRef) {
+    return [];
+  }
+
+  const outlines = outlinesRef;
+
+  // Get the First bookmark
+  const firstRef = outlines.get(PDFName.of('First'));
+  if (!firstRef) {
+    return [];
+  }
+
+  // Parse bookmarks
+  const bookmarks = [];
+
+  function parseBookmark(bookmarkRef, level = 0) {
+    const bookmark = bookmarkRef.lookup();
+    if (!bookmark) return null;
+
+    const title = bookmark.get(PDFName.of('Title'));
+    const dest = bookmark.get(PDFName.of('Dest'));
+    const action = bookmark.get(PDFName.of('Action'));
+
+    let pageNum = null;
+    let pageIndex = null;
+
+    // Try to get destination page
+    if (dest) {
+      if (Array.isArray(dest)) {
+        const pageRef = dest[0];
+        if (pageRef && typeof pageRef === 'object' && 'gen' in pageRef) {
+          try {
+            const pageIndex_ = pdfDoc.getPageIndex(pageRef);
+            if (pageIndex_ >= 0) {
+              pageIndex = pageIndex_;
+              pageNum = pageIndex + 1;
+            }
+          } catch (e) {
+            // ignore
+          }
+        }
+      }
+    } else if (action) {
+      // Handle GoTo actions
+      try {
+        const actionType = action.get(PDFName.of('S'));
+        if (actionType && actionType.toString() === 'GoTo') {
+          const actionDest = action.get(PDFName.of('D'));
+          if (actionDest && Array.isArray(actionDest)) {
+            const pageRef = actionDest[0];
+            if (pageRef && typeof pageRef === 'object' && 'gen' in pageRef) {
+              try {
+                const pageIndex_ = pdfDoc.getPageIndex(pageRef);
+                if (pageIndex_ >= 0) {
+                  pageIndex = pageIndex_;
+                  pageNum = pageIndex + 1;
+                }
+              } catch (e) {
+                // ignore
+              }
+            }
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    const titleStr = title ? title.value : 'Untitled';
+
+    const result = {
+      title: titleStr,
+      page: pageNum,
+      pageIndex: pageIndex,
+      level,
+      ref: bookmarkRef.toString()
+    };
+
+    return result;
+  }
+
+  // Parse first level bookmarks
+  let currentRef = firstRef;
+  while (currentRef) {
+    const bookmark = parseBookmark(currentRef, 0);
+    if (bookmark) {
+      bookmarks.push(bookmark);
+    }
+
+    // Get Next reference
+    try {
+      const current = currentRef.lookup();
+      const nextRef = current ? current.get(PDFName.of('Next')) : null;
+      currentRef = nextRef;
+    } catch (e) {
+      break;
+    }
+  }
+
+  return bookmarks;
+}
+
+/**
+ * Add bookmarks to a PDF
+ * @param {string} filePath - Path to PDF file
+ * @param {Array} bookmarks - Array of bookmark objects {title, page}
+ * @returns {Promise<Buffer>} Modified PDF buffer
+ */
+async function addBookmarks(filePath, bookmarks) {
+  validateString(filePath, 'filePath');
+  validateArray(bookmarks, 'bookmarks');
+
+  let fileData;
+  let pdfDoc;
+
+  try {
+    fileData = await fs.readFile(filePath);
+    pdfDoc = await PDFDocument.load(fileData);
+  } catch (error) {
+    throw new Error(`无法读取 PDF 文件：${error.message}`);
+  }
+
+  const pages = pdfDoc.getPages();
+
+  if (!bookmarks || bookmarks.length === 0) {
+    return Buffer.from(await pdfDoc.save());
+  }
+
+  // Validate all bookmarks before modifying
+  for (const bm of bookmarks) {
+    if (!bm.title || typeof bm.title !== 'string') {
+      throw new Error('Bookmark title must be a non-empty string');
+    }
+    if (typeof bm.page !== 'number' || bm.page < 1 || bm.page > pages.length) {
+      throw new Error(`Invalid bookmark page: ${bm.page}. PDF has ${pages.length} pages.`);
+    }
+  }
+
+  // Create outlines dictionary
+  const outlinesDict = pdfDoc.context.obj({
+    Type: 'Outlines',
+    Count: bookmarks.length
+  });
+
+  // Create bookmark refs
+  const bookmarkRefs = bookmarks.map(() => pdfDoc.context.nextRef());
+
+  // Build bookmark structure
+  for (let i = 0; i < bookmarks.length; i++) {
+    const bm = bookmarks[i];
+    const bookmarkRef = bookmarkRefs[i];
+
+    const pageIndex = bm.page - 1; // bm.page is already validated to be >= 1
+    const targetPage = pages[pageIndex];
+
+    if (!targetPage) {
+      // This should not happen due to validation above, but handle gracefully
+      console.warn(`Skipping bookmark "${bm.title}" - page ${bm.page} does not exist`);
+      continue;
+    }
+
+    // Create destination array [pageRef, XYZ, left, top, zoom]
+    const dest = pdfDoc.context.obj([
+      targetPage.ref,
+      'XYZ',
+      null,
+      null,
+      null
+    ]);
+
+    // Create bookmark dictionary
+    const bookmarkDict = pdfDoc.context.obj({
+      Title: PDFString.of(bm.title),
+      Dest: dest
+    });
+
+    // Add parent/child relationships
+    if (i > 0) {
+      bookmarkDict.set(PDFName.of('Prev'), bookmarkRefs[i - 1]);
+    }
+    if (i < bookmarks.length - 1) {
+      bookmarkDict.set(PDFName.of('Next'), bookmarkRefs[i + 1]);
+    }
+
+    // Add to document
+    pdfDoc.context.assign(bookmarkRef, bookmarkDict);
+  }
+
+  if (bookmarkRefs.length > 0) {
+    outlinesDict.set(PDFName.of('First'), bookmarkRefs[0]);
+    outlinesDict.set(PDFName.of('Last'), bookmarkRefs[bookmarkRefs.length - 1]);
+  }
+
+  // Add outlines to catalog
+  const outlinesRef = pdfDoc.context.register(outlinesDict);
+  pdfDoc.catalog.set(PDFName.of('Outlines'), outlinesRef);
+
+  return Buffer.from(await pdfDoc.save());
+}
+
 module.exports = {
   mergePDFs,
   splitPDF,
@@ -371,6 +637,7 @@ module.exports = {
   applyEdits,
   rotatePDF,
   deletePages,
-  convertPageToImage,
-  protectPDF
+  protectPDF,
+  getBookmarks,
+  addBookmarks
 };
