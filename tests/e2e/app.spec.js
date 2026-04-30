@@ -96,6 +96,67 @@ test.describe('PDF Editor E2E Tests', () => {
     await expect(pagesTab).toHaveClass(/active/);
   });
 
+  test('目录标签页应该可见且可切换', async () => {
+    const outlineTab = window.locator('.sidebar-tab[data-tab="outline"]');
+    const pagesTab = window.locator('.sidebar-tab[data-tab="pages"]');
+    const bookmarksTab = window.locator('.sidebar-tab[data-tab="bookmarks"]');
+
+    await expect(outlineTab).toBeVisible();
+
+    await outlineTab.click();
+    await expect(outlineTab).toHaveClass(/active/);
+    await expect(window.locator('#outlineTab')).toHaveClass(/active/);
+
+    await pagesTab.click();
+    await expect(pagesTab).toHaveClass(/active/);
+    await expect(window.locator('#pagesTab')).toHaveClass(/active/);
+
+    await bookmarksTab.click();
+    await expect(bookmarksTab).toHaveClass(/active/);
+    await expect(window.locator('#bookmarksTab')).toHaveClass(/active/);
+  });
+
+  test('目录标签页应该包含目录列表容器', async () => {
+    const outlineTab = window.locator('.sidebar-tab[data-tab="outline"]');
+    await outlineTab.click();
+
+    const outlineList = window.locator('#outlineList');
+    const outlineInfo = window.locator('#outlineInfo');
+    const outlineContainer = window.locator('#outlineContainer');
+
+    await expect(outlineList).toBeAttached();
+    await expect(outlineInfo).toBeAttached();
+    await expect(outlineContainer).toBeAttached();
+  });
+
+  test('三个侧边栏标签都应该可见', async () => {
+    const pagesTab = window.locator('.sidebar-tab[data-tab="pages"]');
+    const outlineTab = window.locator('.sidebar-tab[data-tab="outline"]');
+    const bookmarksTab = window.locator('.sidebar-tab[data-tab="bookmarks"]');
+
+    await expect(pagesTab).toBeVisible();
+    await expect(outlineTab).toBeVisible();
+    await expect(bookmarksTab).toBeVisible();
+  });
+
+  test('切换到目录标签页时其他标签页应该取消激活状态', async () => {
+    const pagesTab = window.locator('.sidebar-tab[data-tab="pages"]');
+    const outlineTab = window.locator('.sidebar-tab[data-tab="outline"]');
+    const bookmarksTab = window.locator('.sidebar-tab[data-tab="bookmarks"]');
+
+    await pagesTab.click();
+    await expect(pagesTab).toHaveClass(/active/);
+
+    await outlineTab.click();
+    await expect(outlineTab).toHaveClass(/active/);
+    await expect(pagesTab).not.toHaveClass(/active/);
+    await expect(bookmarksTab).not.toHaveClass(/active/);
+
+    await bookmarksTab.click();
+    await expect(bookmarksTab).toHaveClass(/active/);
+    await expect(outlineTab).not.toHaveClass(/active/);
+  });
+
   test('状态栏应该可见且包含文本', async () => {
     const statusMessage = window.locator('#statusMessage');
     await expect(statusMessage).toBeVisible();
