@@ -430,8 +430,25 @@ async function getBookmarks(filePath) {
   }
 
   const bookmarks = [];
+  const visitedRefs = new Set();
+  const MAX_DEPTH = 20;
+  const MAX_BOOKMARKS = 1000;
 
   function parseBookmark(bookmarkRef, level = 0) {
+    if (bookmarks.length >= MAX_BOOKMARKS) {
+      return null;
+    }
+
+    const refStr = bookmarkRef.toString();
+    if (visitedRefs.has(refStr)) {
+      return null;
+    }
+    visitedRefs.add(refStr);
+
+    if (level > MAX_DEPTH) {
+      return null;
+    }
+
     const bookmark = pdfDoc.context.lookup(bookmarkRef);
     if (!bookmark || typeof bookmark.get !== 'function') return null;
 
@@ -520,11 +537,19 @@ async function getBookmarks(filePath) {
     const firstChildRef = bookmark.get(PDFName.of('First'));
     if (firstChildRef) {
       let currentChildRef = firstChildRef;
-      while (currentChildRef) {
+      let childCount = 0;
+      while (currentChildRef && childCount < 100) {
+        const childRefStr = currentChildRef.toString();
+        if (visitedRefs.has(childRefStr)) {
+          break;
+        }
+
         const childBookmark = parseBookmark(currentChildRef, level + 1);
         if (childBookmark) {
           parsedBookmarks.push(...childBookmark);
         }
+
+        childCount++;
 
         try {
           const currentChild = pdfDoc.context.lookup(currentChildRef);
@@ -539,7 +564,13 @@ async function getBookmarks(filePath) {
   }
 
   let currentRef = firstRef;
-  while (currentRef) {
+  let topLevelCount = 0;
+  while (currentRef && topLevelCount < 500) {
+    const refStr = currentRef.toString();
+    if (visitedRefs.has(refStr)) {
+      break;
+    }
+
     const bookmarkList = parseBookmark(currentRef, 0);
     if (bookmarkList) {
       bookmarks.push(...bookmarkList);
