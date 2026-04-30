@@ -64,6 +64,27 @@ function debounce(func, wait) {
   };
 }
 
+// Debug mode check - only log in development
+const isDebugMode = window.location.hostname === 'localhost' || window.location.search.includes('debug=true');
+
+function debugLog(...args) {
+  if (isDebugMode) {
+    console.log(...args);
+  }
+}
+
+function debugWarn(...args) {
+  if (isDebugMode) {
+    console.warn(...args);
+  }
+}
+
+function debugError(...args) {
+  if (isDebugMode) {
+    console.error(...args);
+  }
+}
+
 // Escape HTML to prevent XSS
 function escapeHtml(text) {
   const div = document.createElement('div');
@@ -183,7 +204,7 @@ async function initPDFJS() {
     // Store instance for later access
     window.pdfjsLibInstance = pdfjsLib;
 
-    console.log('PDF.js initialized');
+    debugLog('PDF.js initialized');
   } catch (error) {
     console.error('Failed to initialize PDF.js:', error);
     throw error;
@@ -258,7 +279,7 @@ function cleanupCache() {
   }
 
   if (DEBUG_MODE) {
-    console.log(`[MEMORY] Cache cleaned. Pages: ${pdfPageCache.size}, Docs: ${pdfDocumentCache.size}, FileData: ${pdfFileDataCache.size}`);
+    debugLog(`[MEMORY] Cache cleaned. Pages: ${pdfPageCache.size}, Docs: ${pdfDocumentCache.size}, FileData: ${pdfFileDataCache.size}`);
   }
 }
 
@@ -371,7 +392,7 @@ window.renderPDFPage = async (filePath, pageNum, canvas, scale) => {
     renderPerformance.renderCount++;
 
     if (DEBUG_MODE) {
-      console.log(`[PERF] Rendered page ${pageNum} in ${renderTime.toFixed(2)}ms (${canvas.width}x${canvas.height})`);
+      debugLog(`[PERF] Rendered page ${pageNum} in ${renderTime.toFixed(2)}ms (${canvas.width}x${canvas.height})`);
     }
 
     return {
@@ -494,7 +515,7 @@ function initEventListeners() {
   };
 
   window.handleMenuAction = function(action) {
-    console.log('handleMenuAction 被调用，action:', action);
+    debugLog('handleMenuAction 被调用，action:', action);
     const handler = menuHandlers[action];
     if (handler) {
       handler();
@@ -643,21 +664,21 @@ function initEventListeners() {
 
   // 绑定菜单事件 - 更直接的方式
   const menuItems = document.querySelectorAll('.menu-item');
-  console.log('找到菜单项数量:', menuItems.length);
+  debugLog('找到菜单项数量:', menuItems.length);
   
   menuItems.forEach((item, index) => {
     const action = item.getAttribute('data-action');
-    console.log('绑定菜单 ' + index + ':', action, item);
+    debugLog('绑定菜单 ' + index + ':', action, item);
     
     item.style.pointerEvents = 'auto';
     item.addEventListener('mousedown', (e) => {
-      console.log('菜单 mousedown: ' + action);
+      debugLog('菜单 mousedown: ' + action);
       e.preventDefault();
       e.stopPropagation();
     });
     
     item.addEventListener('click', (e) => {
-      console.log('菜单被点击: ' + action);
+      debugLog('菜单被点击: ' + action);
       e.preventDefault();
       e.stopPropagation();
       handleMenuAction(action);
@@ -671,7 +692,7 @@ function initEventListeners() {
       e.preventDefault();
       e.stopPropagation();
       const action = item.getAttribute('data-action');
-      console.log('子菜单被点击: ' + action);
+      debugLog('子菜单被点击: ' + action);
       
       // Close all submenus after click
       document.querySelectorAll('.submenu').forEach(submenu => {

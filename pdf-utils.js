@@ -23,30 +23,41 @@ async function loadPdfDocument(filePath) {
   }
 }
 
+let mergeInProgress = false;
+
 async function mergePDFs(filePaths) {
-  validateArray(filePaths, 'filePaths');
-
-  const pdfDocs = await Promise.all(
-    filePaths.map(async (filePath) => {
-      validateString(filePath, 'filePath');
-      try {
-        const fileData = await fs.readFile(filePath);
-        return await PDFDocument.load(fileData);
-      } catch (error) {
-        throw new Error(`Failed to read PDF file ${filePath}: ${error.message}`);
-      }
-    })
-  );
-
-  const mergedPdf = await PDFDocument.create();
-
-  for (const pdfDoc of pdfDocs) {
-    const pages = await mergedPdf.copyPages(pdfDoc, pdfDoc.getPageIndices());
-    pages.forEach(page => mergedPdf.addPage(page));
+  if (mergeInProgress) {
+    throw new Error('Another merge operation is in progress');
   }
+  mergeInProgress = true;
 
-  const mergedBytes = await mergedPdf.save();
-  return Buffer.from(mergedBytes);
+  try {
+    validateArray(filePaths, 'filePaths');
+
+    const pdfDocs = await Promise.all(
+      filePaths.map(async (filePath) => {
+        validateString(filePath, 'filePath');
+        try {
+          const fileData = await fs.readFile(filePath);
+          return await PDFDocument.load(fileData);
+        } catch (error) {
+          throw new Error(`Failed to read PDF file ${filePath}: ${error.message}`);
+        }
+      })
+    );
+
+    const mergedPdf = await PDFDocument.create();
+
+    for (const pdfDoc of pdfDocs) {
+      const pages = await mergedPdf.copyPages(pdfDoc, pdfDoc.getPageIndices());
+      pages.forEach(page => mergedPdf.addPage(page));
+    }
+
+    const mergedBytes = await mergedPdf.save();
+    return Buffer.from(mergedBytes);
+  } finally {
+    mergeInProgress = false;
+  }
 }
 
 async function splitPDF(filePath, ranges) {

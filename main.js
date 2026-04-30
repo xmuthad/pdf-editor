@@ -92,24 +92,58 @@ function safeIpcHandler(handlerName, handler) {
       return await handler(...args);
     } catch (error) {
       console.error(`Error in IPC handler ${handlerName}:`, error);
-      throw error;
+      // Don't leak internal error details to renderer
+      throw new Error(`Operation failed: ${handlerName}`);
     }
   };
 }
 
+// Validate file path to prevent path traversal attacks
+function validateFilePath(filePath) {
+  if (typeof filePath !== 'string') {
+    throw new Error('Invalid file path');
+  }
+  // Check for path traversal attempts
+  if (filePath.includes('..') || filePath.includes('~')) {
+    throw new Error('Invalid file path');
+  }
+  return filePath;
+}
+
+// Validate array of file paths
+function validateFilePaths(filePaths) {
+  if (!Array.isArray(filePaths)) {
+    throw new Error('Invalid file paths');
+  }
+  return filePaths.map(validateFilePath);
+}
+
+// Validate page numbers array
+function validatePageNumbers(pageNumbers) {
+  if (!Array.isArray(pageNumbers)) {
+    throw new Error('Invalid page numbers');
+  }
+  for (const num of pageNumbers) {
+    if (typeof num !== 'number' || num < 1 || !Number.isInteger(num)) {
+      throw new Error('Invalid page number');
+    }
+  }
+  return pageNumbers;
+}
+
 // Original IPC handlers
-ipcMain.handle('pdf:merge', safeIpcHandler('pdf:merge', (_, files) => mergePDFs(files)));
-ipcMain.handle('pdf:split', safeIpcHandler('pdf:split', (_, file, ranges) => splitPDF(file, ranges)));
-ipcMain.handle('pdf:watermark', safeIpcHandler('pdf:watermark', (_, file, text) => addWatermark(file, text)));
+ipcMain.handle('pdf:merge', safeIpcHandler('pdf:merge', (_, files) => mergePDFs(validateFilePaths(files))));
+ipcMain.handle('pdf:split', safeIpcHandler('pdf:split', (_, file, ranges) => splitPDF(validateFilePath(file), ranges)));
+ipcMain.handle('pdf:watermark', safeIpcHandler('pdf:watermark', (_, file, text) => addWatermark(validateFilePath(file), text)));
 
 // New editor IPC handlers
-ipcMain.handle('pdf:load', safeIpcHandler('pdf:load', (_, filePath) => loadPDF(filePath)));
-ipcMain.handle('pdf:applyEdits', safeIpcHandler('pdf:applyEdits', (_, filePath, operations) => applyEdits(filePath, operations)));
+ipcMain.handle('pdf:load', safeIpcHandler('pdf:load', (_, filePath) => loadPDF(validateFilePath(filePath))));
+ipcMain.handle('pdf:applyEdits', safeIpcHandler('pdf:applyEdits', (_, filePath, operations) => applyEdits(validateFilePath(filePath), operations)));
 
 // File dialog for saving PDF
 ipcMain.handle('file:saveDialog', safeIpcHandler('file:saveDialog', async (_, defaultPath) => {
   const result = await dialog.showSaveDialog(mainWindow, {
-    defaultPath,
+    defaultPath: defaultPath ? validateFilePath(defaultPath) : undefined,
     filters: [{ name: 'PDF Files', extensions: ['pdf'] }]
   });
   return result;
@@ -117,7 +151,7 @@ ipcMain.handle('file:saveDialog', safeIpcHandler('file:saveDialog', async (_, de
 
 // Write file to disk
 ipcMain.handle('file:write', safeIpcHandler('file:write', async (_, filePath, buffer) => {
-  await fs.writeFile(filePath, Buffer.from(buffer));
+  await fs.writeFile(validateFilePath(filePath), Buffer.from(buffer));
   return true;
 }));
 
@@ -140,22 +174,27 @@ ipcMain.handle('file:pickPDF', safeIpcHandler('file:pickPDF', async () => {
 
 // Read file for PDF.js
 ipcMain.handle('pdf:readFile', safeIpcHandler('pdf:readFile', async (_, filePath) => {
-  const data = await fs.readFile(filePath);
+  const data = await fs.readFile(validateFilePath(filePath));
   return Array.from(data);
 }));
 
 // Rotate PDF pages
-ipcMain.handle('pdf:rotate', safeIpcHandler('pdf:rotate', (_, filePath, pageNumbers, degrees) => 
-  rotatePDF(filePath, pageNumbers, degrees)
+ipcMain.handle('pdf:rotate', safeIpcHandler('pdf:rotate', (_, filePath, pageNumbers, degrees) =>
+  rotatePDF(validateFilePath(filePath), validatePageNumbers(pageNumbers), degrees)
 ));
 
 // Delete PDF pages
-ipcMain.handle('pdf:deletePages', safeIpcHandler('pdf:deletePages', (_, filePath, pageNumbers) => 
-  deletePages(filePath, pageNumbers)
+ipcMain.handle('pdf:deletePages', safeIpcHandler('pdf:deletePages', (_, filePath, pageNumbers) =>
+  deletePages(validateFilePath(filePath), validatePageNumbers(pageNumbers))
 ));
 
 // Convert PDF page to image - returns raw image data for renderer to process
 ipcMain.handle('pdf:convertToImage', safeIpcHandler('pdf:convertToImage', async (_, filePath, pageNum, format, scale) => {
+  validateFilePath(filePath);
+  if (typeof pageNum !== 'number' || pageNum < 1 || !Number.isInteger(pageNum)) {
+    throw new Error('Invalid page number');
+  }
+
   const pdfjsLib = await getPdfjsLib();
   const fileData = await fs.readFile(filePath);
   const typedArray = new Uint8Array(fileData);
@@ -170,16 +209,16 @@ ipcMain.handle('pdf:convertToImage', safeIpcHandler('pdf:convertToImage', async 
 }));
 
 // Protect PDF with password
-ipcMain.handle('pdf:protect', safeIpcHandler('pdf:protect', (_, filePath, userPassword, ownerPassword, permissions) => 
-  protectPDF(filePath, userPassword, ownerPassword, permissions)
+ipcMain.handle('pdf:protect', safeIpcHandler('pdf:protect', (_, filePath, userPassword, ownerPassword, permissions) =>
+  protectPDF(validateFilePath(filePath), userPassword, ownerPassword, permissions)
 ));
 
 // Get PDF bookmarks
-ipcMain.handle('pdf:getBookmarks', safeIpcHandler('pdf:getBookmarks', (_, filePath) => getBookmarks(filePath)));
+ipcMain.handle('pdf:getBookmarks', safeIpcHandler('pdf:getBookmarks', (_, filePath) => getBookmarks(validateFilePath(filePath))));
 
 // Add PDF bookmarks
-ipcMain.handle('pdf:addBookmarks', safeIpcHandler('pdf:addBookmarks', (_, filePath, bookmarks) => 
-  addBookmarks(filePath, bookmarks)
+ipcMain.handle('pdf:addBookmarks', safeIpcHandler('pdf:addBookmarks', (_, filePath, bookmarks) =>
+  addBookmarks(validateFilePath(filePath), bookmarks)
 ));
 
 // Settings IPC handlers

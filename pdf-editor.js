@@ -458,6 +458,9 @@ class PDFEditor {
     this.redoStack = [];
     this.textItems = [];
     this.selectedTextItem = null;
+    if (this.ocrEngine) {
+      this.ocrEngine = null;
+    }
   }
 
   getTextStatus() {
