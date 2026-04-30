@@ -1897,6 +1897,7 @@ async function renderTextLayer(pageNum, canvas, textLayer) {
     const page = await pdf.getPage(pageNum);
     const scale = pdfEditor ? pdfEditor.scale : 1.0;
     const viewport = page.getViewport({ scale });
+    const pageRotation = page.rotate || 0;
 
     // Get text content
     const textContent = await page.getTextContent();
@@ -1912,23 +1913,40 @@ async function renderTextLayer(pageNum, canvas, textLayer) {
     textContent.items.forEach((item, index) => {
       const tx = item.transform;
       const fontSize = Math.sqrt(tx[0] * tx[0] + tx[1] * tx[1]);
-      const rotation = Math.atan2(tx[1], tx[0]) * (180 / Math.PI);
+      const textRotation = Math.atan2(tx[1], tx[0]) * (180 / Math.PI);
+
+      // Calculate position with page rotation support
+      let x = tx[4];
+      let y = tx[5];
+
+      // Adjust coordinates based on page rotation
+      if (pageRotation === 90) {
+        const tempX = x;
+        x = y;
+        y = viewport.height - tempX;
+      } else if (pageRotation === 180) {
+        x = viewport.width - x;
+        y = viewport.height - y;
+      } else if (pageRotation === 270) {
+        const tempX = x;
+        x = viewport.width - y;
+        y = tempX;
+      }
 
       const span = document.createElement('span');
       span.textContent = item.str;
       span.className = 'text-layer-span';
 
       // Position the text span
-      const x = tx[4];
-      const y = viewport.height - tx[5];
+      const finalY = viewport.height - y;
 
       span.style.cssText = `
         position: absolute;
         left: ${x}px;
-        top: ${y - fontSize}px;
+        top: ${finalY - fontSize}px;
         font-size: ${fontSize}px;
         font-family: ${item.fontName || 'sans-serif'};
-        transform: rotate(${rotation}deg);
+        transform: rotate(${textRotation}deg);
         transform-origin: left bottom;
         white-space: pre;
         cursor: text;
@@ -1939,16 +1957,6 @@ async function renderTextLayer(pageNum, canvas, textLayer) {
       `;
 
       textLayer.appendChild(span);
-    });
-
-    // Add copy event listener to text layer
-    textLayer.addEventListener('copy', (e) => {
-      const selection = window.getSelection();
-      if (selection && selection.toString()) {
-        e.clipboardData.setData('text/plain', selection.toString());
-        e.preventDefault();
-        updateStatus('文本已复制到剪贴板');
-      }
     });
 
   } catch (error) {
@@ -1964,6 +1972,12 @@ function setupMultiPageEditing() {
   document.querySelectorAll('.page-canvas').forEach((canvas) => {
     const pageNum = parseInt(canvas.id.split('_')[1]);
 
+    // Skip if already initialized
+    if (canvas.dataset.eventsInitialized === 'true') {
+      return;
+    }
+    canvas.dataset.eventsInitialized = 'true';
+
     // Setup event listeners for each page canvas
     canvas.style.imageRendering = 'optimizeSpeed';
     canvas.addEventListener('mousedown', (e) => handlePageMouseDown(e, pageNum));
@@ -1975,6 +1989,12 @@ function setupMultiPageEditing() {
   // Setup text layer event handling - allow text selection without interfering with editing
   document.querySelectorAll('.text-layer').forEach((textLayer) => {
     const pageNum = parseInt(textLayer.id.split('_')[1]);
+
+    // Skip if already initialized
+    if (textLayer.dataset.eventsInitialized === 'true') {
+      return;
+    }
+    textLayer.dataset.eventsInitialized = 'true';
 
     // Allow text selection but prevent interference with canvas editing
     textLayer.addEventListener('mousedown', (e) => {
@@ -1992,6 +2012,16 @@ function setupMultiPageEditing() {
     textLayer.addEventListener('dblclick', (e) => {
       if (currentTool === 'text' || currentTool === 'select') {
         e.stopPropagation();
+      }
+    });
+
+    // Handle copy event for text selection
+    textLayer.addEventListener('copy', (e) => {
+      const selection = window.getSelection();
+      if (selection && selection.toString()) {
+        e.clipboardData.setData('text/plain', selection.toString());
+        e.preventDefault();
+        updateStatus('文本已复制到剪贴板');
       }
     });
   });
@@ -2424,15 +2454,21 @@ function setZoom(level) {
   if (pdfEditor) {
     pdfEditor.scale = currentZoom / 100;
 
-    // Re-render text layers at new scale
-    document.querySelectorAll('.page-canvas-wrapper').forEach((pageWrapper) => {
-      const pageNum = parseInt(pageWrapper.dataset.page);
-      const canvas = pageWrapper.querySelector('.page-canvas');
-      const textLayer = pageWrapper.querySelector('.text-layer');
-      if (canvas && textLayer) {
-        renderTextLayer(pageNum, canvas, textLayer);
-      }
-    });
+    // Debounce text layer re-render to avoid rapid re-renders during zoom
+    if (window.textLayerRenderTimeout) {
+      clearTimeout(window.textLayerRenderTimeout);
+    }
+    window.textLayerRenderTimeout = setTimeout(() => {
+      // Re-render text layers at new scale
+      document.querySelectorAll('.page-canvas-wrapper').forEach((pageWrapper) => {
+        const pageNum = parseInt(pageWrapper.dataset.page);
+        const canvas = pageWrapper.querySelector('.page-canvas');
+        const textLayer = pageWrapper.querySelector('.text-layer');
+        if (canvas && textLayer) {
+          renderTextLayer(pageNum, canvas, textLayer);
+        }
+      });
+    }, 300);
 
     // Re-render at higher resolution if zoom > 100%
     if (currentZoom > 100) {
