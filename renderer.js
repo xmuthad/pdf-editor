@@ -85,6 +85,50 @@ let currentZoom = 100;
 let currentTool = 'select';
 let pdfjsLib = null;
 
+function isEditableTarget(target) {
+  if (!target || typeof target !== 'object') return false;
+  const tagName = target.tagName ? target.tagName.toLowerCase() : '';
+  return target.isContentEditable || tagName === 'input' || tagName === 'textarea' || tagName === 'select';
+}
+
+// Settings state
+let appSettings = {
+  openLastFile: false,
+  lastFilePath: ''
+};
+
+// Load settings from disk
+async function loadAppSettings() {
+  try {
+    if (window.pdfAPI) {
+      const settings = await window.pdfAPI.getSettings();
+      if (settings) {
+        appSettings.openLastFile = settings.openLastFile || false;
+        appSettings.lastFilePath = settings.lastFilePath || '';
+      }
+    }
+  } catch (error) {
+    console.error('Failed to load settings:', error);
+  }
+}
+
+// Save settings to disk
+async function saveAppSettings() {
+  try {
+    if (window.pdfAPI) {
+      await window.pdfAPI.setSettings(appSettings);
+    }
+  } catch (error) {
+    console.error('Failed to save settings:', error);
+  }
+}
+
+// Update and save settings
+async function updateSetting(key, value) {
+  appSettings[key] = value;
+  await saveAppSettings();
+}
+
 // Initialize PDF.js from preload
 async function initPDFJS() {
   if (pdfjsLib) return pdfjsLib;
@@ -382,12 +426,65 @@ function initEventListeners() {
       case 'tools':
         selectTool('select');
         break;
+      case 'settings':
+        openSettingsModal();
+        break;
       case 'help':
         openHelpModal();
         break;
       default:
         break;
     }
+  }
+
+  // Settings Modal
+  function openSettingsModal() {
+    const settingsModal = document.getElementById('settingsModal');
+    const openLastFileCheckbox = document.getElementById('openLastFileCheckbox');
+    const lastFilePathHint = document.getElementById('lastFilePathHint');
+
+    if (settingsModal) {
+      if (openLastFileCheckbox) {
+        openLastFileCheckbox.checked = appSettings.openLastFile;
+      }
+      if (lastFilePathHint && appSettings.lastFilePath) {
+        lastFilePathHint.textContent = `上次文件：${appSettings.lastFilePath}`;
+      } else if (lastFilePathHint) {
+        lastFilePathHint.textContent = '';
+      }
+      settingsModal.classList.add('active');
+    }
+  }
+
+  function closeSettingsModalFunc() {
+    const settingsModal = document.getElementById('settingsModal');
+    if (settingsModal) {
+      settingsModal.classList.remove('active');
+    }
+  }
+
+  const closeSettingsModalBtn = document.getElementById('closeSettingsModalBtn');
+  const closeSettingsModalX = document.getElementById('closeSettingsModal');
+  const settingsModalOverlay = document.getElementById('settingsModal');
+  const openLastFileCheckbox = document.getElementById('openLastFileCheckbox');
+
+  if (closeSettingsModalBtn) {
+    closeSettingsModalBtn.addEventListener('click', closeSettingsModalFunc);
+  }
+  if (closeSettingsModalX) {
+    closeSettingsModalX.addEventListener('click', closeSettingsModalFunc);
+  }
+  if (settingsModalOverlay) {
+    settingsModalOverlay.addEventListener('click', (e) => {
+      if (e.target === settingsModalOverlay) {
+        closeSettingsModalFunc();
+      }
+    });
+  }
+  if (openLastFileCheckbox) {
+    openLastFileCheckbox.addEventListener('change', async (e) => {
+      await updateSetting('openLastFile', e.target.checked);
+    });
   }
 
   // Help Modal
@@ -518,6 +615,12 @@ function initEventListeners() {
 
   if (zoomInBtn) zoomInBtn.addEventListener('click', () => setZoom(currentZoom + 10));
   if (zoomOutBtn) zoomOutBtn.addEventListener('click', () => setZoom(currentZoom - 10));
+  const zoomLevelDisplay = document.getElementById('zoomLevel');
+  if (zoomLevelDisplay) {
+    zoomLevelDisplay.addEventListener('click', () => setZoom(100));
+    zoomLevelDisplay.style.cursor = 'pointer';
+    zoomLevelDisplay.title = '点击恢复 100%';
+  }
 
   // Page navigation
   const prevPageBtn = document.getElementById('prevPageBtn');
@@ -537,10 +640,12 @@ function initEventListeners() {
 
   // Action buttons
   const undoBtn = document.getElementById('undoBtn');
+  const redoBtn = document.getElementById('redoBtn');
   const clearBtn = document.getElementById('clearBtn');
   const saveEditBtn = document.getElementById('saveEditBtn');
 
   if (undoBtn) undoBtn.addEventListener('click', handleUndo);
+  if (redoBtn) redoBtn.addEventListener('click', handleRedo);
   if (clearBtn) clearBtn.addEventListener('click', handleClearAll);
   if (saveEditBtn) saveEditBtn.addEventListener('click', handleSavePDF);
 
@@ -552,6 +657,56 @@ function initEventListeners() {
   if (undoToolbarBtn) undoToolbarBtn.addEventListener('click', handleUndo);
   if (redoToolbarBtn) redoToolbarBtn.addEventListener('click', handleRedo);
   if (saveBtn) saveBtn.addEventListener('click', handleSavePDF);
+
+  // Keyboard shortcuts
+  window.addEventListener('keydown', (e) => {
+    if (isEditableTarget(e.target)) return;
+
+    // Undo/Redo
+    if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+      if (e.shiftKey) {
+        handleRedo();
+      } else {
+        handleUndo();
+      }
+      e.preventDefault();
+    } else if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
+      handleRedo();
+      e.preventDefault();
+    }
+    
+    // Zoom
+    if ((e.ctrlKey || e.metaKey) && (e.key === '=' || e.key === '+')) {
+      setZoom(currentZoom + 10);
+      e.preventDefault();
+    } else if ((e.ctrlKey || e.metaKey) && e.key === '-') {
+      setZoom(currentZoom - 10);
+      e.preventDefault();
+    } else if ((e.ctrlKey || e.metaKey) && e.key === '0') {
+      setZoom(100);
+      e.preventDefault();
+    }
+    
+    // Save
+    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+      handleSavePDF();
+      e.preventDefault();
+    }
+  });
+
+  // Mouse wheel zoom
+  window.addEventListener('wheel', (e) => {
+    if (isEditableTarget(e.target)) return;
+
+    if (e.ctrlKey || e.metaKey) {
+      if (e.deltaY < 0) {
+        setZoom(currentZoom + 5);
+      } else {
+        setZoom(currentZoom - 5);
+      }
+      e.preventDefault();
+    }
+  }, { passive: false });
 
   // Quick actions
   const quickMergeBtn = document.getElementById('quickMergeBtn');
@@ -618,6 +773,7 @@ function initEventListeners() {
 
 // Bookmarks state
 let currentBookmarks = [];
+let editingBookmarkIndex = -1;
 
 // Bookmark functions
 async function loadBookmarks() {
@@ -642,22 +798,33 @@ async function loadBookmarks() {
     }
 
     bookmarksList.innerHTML = currentBookmarks.map((bm, index) => `
-      <div class="bookmark-item" data-index="${index}">
+      <div class="bookmark-item" data-index="${index}" style="padding-left: ${12 + (bm.level || 0) * 16}px">
         <span class="bookmark-title">${escapeHtml(bm.title)}</span>
         <span class="bookmark-page">第 ${bm.page} 页</span>
-        <button class="bookmark-delete" data-index="${index}" title="删除书签">&times;</button>
+        <div class="bookmark-item-actions">
+          <button class="bookmark-edit" data-index="${index}" title="编辑书签">✎</button>
+          <button class="bookmark-delete" data-index="${index}" title="删除书签">&times;</button>
+        </div>
       </div>
     `).join('');
 
     // Add click handlers
     bookmarksList.querySelectorAll('.bookmark-item').forEach(item => {
       item.addEventListener('click', (e) => {
-        if (e.target.classList.contains('bookmark-delete')) return;
+        if (e.target.closest('.bookmark-item-actions')) return;
         const index = parseInt(item.dataset.index);
         const bm = currentBookmarks[index];
         if (bm.page) {
           goToPage(bm.page);
         }
+      });
+    });
+
+    bookmarksList.querySelectorAll('.bookmark-edit').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const index = parseInt(btn.dataset.index);
+        openBookmarkModal(null, index);
       });
     });
 
@@ -678,7 +845,7 @@ async function loadBookmarks() {
 
     try {
       const buffer = await window.pdfAPI.addBookmarks(currentPdfPath, currentBookmarks);
-      await window.pdfAPI.writeFile(currentPdfPath, Array.from(buffer));
+      await window.pdfAPI.writeFile(currentPdfPath, buffer);
       renderBookmarks();
     } catch (error) {
       console.error('Failed to delete bookmark:', error);
@@ -695,16 +862,25 @@ async function loadBookmarks() {
   const bookmarkTitleInput = document.getElementById('bookmarkTitle');
   const bookmarkPageInput = document.getElementById('bookmarkPage');
 
-  function openBookmarkModal(pageNum = null) {
-    document.getElementById('bookmarkModalTitle').textContent = '添加书签';
-    bookmarkTitleInput.value = '';
-    bookmarkPageInput.value = pageNum || currentPage;
+  function openBookmarkModal(pageNum = null, editIndex = -1) {
+    editingBookmarkIndex = editIndex;
+    if (editingBookmarkIndex >= 0) {
+      const bm = currentBookmarks[editingBookmarkIndex];
+      document.getElementById('bookmarkModalTitle').textContent = '编辑书签';
+      bookmarkTitleInput.value = bm.title;
+      bookmarkPageInput.value = bm.page;
+    } else {
+      document.getElementById('bookmarkModalTitle').textContent = '添加书签';
+      bookmarkTitleInput.value = '';
+      bookmarkPageInput.value = pageNum || currentPage;
+    }
     bookmarkModal.classList.add('active');
     bookmarkTitleInput.focus();
   }
 
   function closeBookmarkModalFunc() {
     bookmarkModal.classList.remove('active');
+    editingBookmarkIndex = -1;
   }
 
   async function saveBookmark() {
@@ -722,17 +898,28 @@ async function loadBookmarks() {
 
     if (!currentPdfPath) return;
 
-    const newBookmark = { title, page };
-    currentBookmarks.push(newBookmark);
+    let oldBookmark = null;
+    if (editingBookmarkIndex >= 0) {
+      oldBookmark = { ...currentBookmarks[editingBookmarkIndex] };
+      currentBookmarks[editingBookmarkIndex].title = title;
+      currentBookmarks[editingBookmarkIndex].page = page;
+    } else {
+      const newBookmark = { title, page };
+      currentBookmarks.push(newBookmark);
+    }
 
     try {
       const buffer = await window.pdfAPI.addBookmarks(currentPdfPath, currentBookmarks);
-      await window.pdfAPI.writeFile(currentPdfPath, Array.from(buffer));
+      await window.pdfAPI.writeFile(currentPdfPath, buffer);
       closeBookmarkModalFunc();
       renderBookmarks();
     } catch (error) {
       console.error('Failed to save bookmark:', error);
-      currentBookmarks.pop();
+      if (editingBookmarkIndex >= 0) {
+        currentBookmarks[editingBookmarkIndex] = oldBookmark;
+      } else {
+        currentBookmarks.pop();
+      }
       alert('保存书签失败');
     }
   }
@@ -741,6 +928,222 @@ async function loadBookmarks() {
   if (closeBookmarkModal) closeBookmarkModal.addEventListener('click', closeBookmarkModalFunc);
   if (cancelBookmarkBtn) cancelBookmarkBtn.addEventListener('click', closeBookmarkModalFunc);
   if (saveBookmarkBtn) saveBookmarkBtn.addEventListener('click', saveBookmark);
+
+  // Split PDF modal event listeners
+  const splitModal = document.getElementById('splitModal');
+  const closeSplitModal = document.getElementById('closeSplitModal');
+  const cancelSplitModal = document.getElementById('cancelSplitModal');
+  const confirmSplitBtn = document.getElementById('confirmSplitBtn');
+  const splitRangesInput = document.getElementById('splitRanges');
+
+  function openSplitModal() {
+    if (!currentPdfPath) {
+      alert('请先打开 PDF 文件');
+      return;
+    }
+    const splitModalPagesInfo = document.getElementById('splitModalPagesInfo');
+    if (splitModalPagesInfo) splitModalPagesInfo.textContent = `PDF 共 ${totalPages} 页`;
+    if (splitRangesInput) {
+      splitRangesInput.value = '';
+      splitModal.classList.add('active');
+      setTimeout(() => splitRangesInput.focus(), 100);
+    }
+  }
+
+  function closeSplitModalFunc() {
+    if (splitModal) splitModal.classList.remove('active');
+  }
+
+  if (closeSplitModal) closeSplitModal.addEventListener('click', closeSplitModalFunc);
+  if (cancelSplitModal) cancelSplitModal.addEventListener('click', closeSplitModalFunc);
+  if (confirmSplitBtn) confirmSplitBtn.addEventListener('click', performSplit);
+
+  const handleSplitKeydown = (e) => {
+    if (e.key === 'Enter') {
+      performSplit();
+    } else if (e.key === 'Escape') {
+      closeSplitModalFunc();
+    }
+  };
+
+  if (splitRangesInput) splitRangesInput.addEventListener('keydown', handleSplitKeydown);
+
+  // Watermark modal event listeners
+  const watermarkModal = document.getElementById('watermarkModal');
+  const closeWatermarkModal = document.getElementById('closeWatermarkModal');
+  const cancelWatermarkModal = document.getElementById('cancelWatermarkModal');
+  const confirmWatermarkBtn = document.getElementById('confirmWatermarkBtn');
+  const watermarkText = document.getElementById('watermarkText');
+  const watermarkOpacity = document.getElementById('watermarkOpacity');
+  const watermarkOpacityValue = document.getElementById('watermarkOpacityValue');
+
+  function openWatermarkModal() {
+    if (watermarkText) watermarkText.value = '';
+    if (watermarkModal) watermarkModal.classList.add('active');
+    if (watermarkText) setTimeout(() => watermarkText.focus(), 100);
+  }
+
+  function closeWatermarkModalFunc() {
+    if (watermarkModal) watermarkModal.classList.remove('active');
+  }
+
+  if (closeWatermarkModal) closeWatermarkModal.addEventListener('click', closeWatermarkModalFunc);
+  if (cancelWatermarkModal) cancelWatermarkModal.addEventListener('click', closeWatermarkModalFunc);
+  if (confirmWatermarkBtn) confirmWatermarkBtn.addEventListener('click', performWatermark);
+  if (watermarkOpacity) {
+    watermarkOpacity.addEventListener('input', () => {
+      if (watermarkOpacityValue) watermarkOpacityValue.textContent = `${watermarkOpacity.value}%`;
+    });
+  }
+
+  // Protect modal event listeners
+  const protectModal = document.getElementById('protectModal');
+  const closeProtectModal = document.getElementById('closeProtectModal');
+  const cancelProtectModal = document.getElementById('cancelProtectModal');
+  const confirmProtectBtn = document.getElementById('confirmProtectBtn');
+
+  function openProtectModal() {
+    if (protectModal) protectModal.classList.add('active');
+  }
+
+  function closeProtectModalFunc() {
+    if (protectModal) protectModal.classList.remove('active');
+  }
+
+  if (closeProtectModal) closeProtectModal.addEventListener('click', closeProtectModalFunc);
+  if (cancelProtectModal) cancelProtectModal.addEventListener('click', closeProtectModalFunc);
+  if (confirmProtectBtn) confirmProtectBtn.addEventListener('click', performProtect);
+
+   // Delete Page modal event listeners
+   const deletePageModal = document.getElementById('deletePageModal');
+   const closeDeletePageModal = document.getElementById('closeDeletePageModal');
+   const cancelDeletePageModal = document.getElementById('cancelDeletePageModal');
+   const confirmDeletePageBtn = document.getElementById('confirmDeletePageBtn');
+
+   function openDeletePageModal(pages) {
+     const warning = document.getElementById('deletePageWarning');
+     if (warning) {
+       const pageList = pages.length <= 10
+         ? pages.join(', ')
+         : `${pages.slice(0, 10).join(', ')}...`;
+       warning.textContent = `确定要删除以下 ${pages.length} 页吗？\n${pageList}`;
+     }
+     if (deletePageModal) deletePageModal.classList.add('active');
+   }
+
+   function closeDeletePageModalFunc() {
+     if (deletePageModal) deletePageModal.classList.remove('active');
+   }
+
+   if (closeDeletePageModal) closeDeletePageModal.addEventListener('click', closeDeletePageModalFunc);
+   if (cancelDeletePageModal) cancelDeletePageModal.addEventListener('click', closeDeletePageModalFunc);
+   if (confirmDeletePageBtn) confirmDeletePageBtn.addEventListener('click', performDeletePages);
+
+   // Merge PDF modal event listeners
+  const mergeModal = document.getElementById('mergeModal');
+  const closeMergeModal = document.getElementById('closeMergeModal');
+  const cancelMergeModal = document.getElementById('cancelMergeModal');
+  const confirmMergeBtn = document.getElementById('confirmMergeBtn');
+  const addMergeFilesBtn = document.getElementById('addMergeFilesBtn');
+  const mergeFilesList = document.getElementById('mergeFilesList');
+
+  let mergeFiles = [];
+
+  function openMergeModal() {
+    mergeFiles = [];
+    renderMergeFiles();
+    if (mergeModal) mergeModal.classList.add('active');
+  }
+
+  function closeMergeModalFunc() {
+    if (mergeModal) mergeModal.classList.remove('active');
+  }
+
+  function renderMergeFiles() {
+    if (!mergeFilesList) return;
+    mergeFilesList.innerHTML = '';
+    
+    mergeFiles.forEach((file, index) => {
+      const item = document.createElement('div');
+      item.className = 'merge-file-item';
+      item.draggable = true;
+      item.dataset.index = index;
+      
+      item.innerHTML = `
+        <span class="file-icon">📄</span>
+        <span class="file-name" title="${file}">${file.split(/[\\/]/).pop()}</span>
+        <span class="remove-file" title="移除">&times;</span>
+      `;
+      
+      item.querySelector('.remove-file').addEventListener('click', (e) => {
+        e.stopPropagation();
+        mergeFiles.splice(index, 1);
+        renderMergeFiles();
+      });
+      
+      // Drag and drop reordering
+      item.addEventListener('dragstart', (e) => {
+        item.classList.add('dragging');
+        e.dataTransfer.setData('text/plain', index);
+      });
+      
+      item.addEventListener('dragend', () => {
+        item.classList.remove('dragging');
+      });
+      
+      item.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        const draggingItem = mergeFilesList.querySelector('.dragging');
+        if (draggingItem && draggingItem !== item) {
+          const bounding = item.getBoundingClientRect();
+          const offset = e.clientY - bounding.top - bounding.height / 2;
+          if (offset > 0) {
+            item.after(draggingItem);
+          } else {
+            item.before(draggingItem);
+          }
+        }
+      });
+      
+      item.addEventListener('drop', (e) => {
+        e.preventDefault();
+        const fromIndex = parseInt(e.dataTransfer.getData('text/plain'));
+        const toIndex = Array.from(mergeFilesList.children).indexOf(item);
+        
+        if (fromIndex !== toIndex) {
+          const [movedFile] = mergeFiles.splice(fromIndex, 1);
+          mergeFiles.splice(toIndex, 0, movedFile);
+          renderMergeFiles();
+        }
+      });
+      
+      mergeFilesList.appendChild(item);
+    });
+  }
+
+  if (closeMergeModal) closeMergeModal.addEventListener('click', closeMergeModalFunc);
+  if (cancelMergeModal) cancelMergeModal.addEventListener('click', closeMergeModalFunc);
+  if (confirmMergeBtn) confirmMergeBtn.addEventListener('click', performMerge);
+  if (addMergeFilesBtn) {
+    addMergeFilesBtn.addEventListener('click', async () => {
+      const result = await window.pdfAPI.pickPDF();
+      if (!result.canceled && result.filePaths) {
+        mergeFiles.push(...result.filePaths);
+        renderMergeFiles();
+      }
+    });
+  }
+
+  const handleBookmarkKeydown = (e) => {
+    if (e.key === 'Enter') {
+      saveBookmark();
+    } else if (e.key === 'Escape') {
+      closeBookmarkModalFunc();
+    }
+  };
+
+  if (bookmarkTitleInput) bookmarkTitleInput.addEventListener('keydown', handleBookmarkKeydown);
+  if (bookmarkPageInput) bookmarkPageInput.addEventListener('keydown', handleBookmarkKeydown);
 
 function setupToolOptions() {
   // Eraser size
@@ -764,7 +1167,11 @@ function setupToolOptions() {
       const size = e.target.value;
       fontSizeValue.textContent = size;
       if (pdfEditor) {
-        pdfEditor.setOptions({ fontSize: parseInt(size) });
+        if (pdfEditor.selectedTextItem) {
+          pdfEditor.updateSelectedTextStyle({ fontSize: parseInt(size) });
+        } else {
+          pdfEditor.setOptions({ fontSize: parseInt(size) });
+        }
       }
     });
   }
@@ -777,7 +1184,11 @@ function setupToolOptions() {
       const color = e.target.value;
       if (textColorValue) textColorValue.textContent = color;
       if (pdfEditor) {
-        pdfEditor.setOptions({ textColor: color });
+        if (pdfEditor.selectedTextItem) {
+          pdfEditor.updateSelectedTextStyle({ textColor: color });
+        } else {
+          pdfEditor.setOptions({ textColor: color });
+        }
       }
     });
   }
@@ -788,7 +1199,11 @@ function setupToolOptions() {
     fontFamilySelect.addEventListener('change', (e) => {
       const font = e.target.value;
       if (pdfEditor) {
-        pdfEditor.setOptions({ fontFamily: font });
+        if (pdfEditor.selectedTextItem) {
+          pdfEditor.updateSelectedTextStyle({ fontFamily: font });
+        } else {
+          pdfEditor.setOptions({ fontFamily: font });
+        }
       }
     });
   }
@@ -850,9 +1265,25 @@ function selectTool(tool) {
   if (pdfEditor) {
     const editorTool = tool === 'select' || tool === 'hand' ? null : tool;
     pdfEditor.setTool(editorTool);
-  }
+    updateStatus(`工具：${getToolName(tool)} | pdfEditor.tool=${pdfEditor.currentTool}`);
 
-  updateStatus(`工具：${getToolName(tool)}`);
+    // Show/hide debug panel for text tool
+    const textDebugInfo = document.getElementById('textDebugInfo');
+    const textDebugContent = document.getElementById('textDebugContent');
+    if (tool === 'text' && textDebugInfo) {
+      textDebugInfo.style.display = 'block';
+      textDebugContent.innerHTML = `
+        <div>工具: ${tool}</div>
+        <div>pdfEditor.tool: ${pdfEditor.currentTool}</div>
+        <div>pdfEditor.textItems: ${pdfEditor.textItems ? pdfEditor.textItems.length : 'null'}</div>
+        <div>currentPage: ${pdfEditor.currentPage}</div>
+      `;
+    } else if (textDebugInfo) {
+      textDebugInfo.style.display = 'none';
+    }
+  } else {
+    updateStatus(`工具：${getToolName(tool)} (编辑器未初始化)`);
+  }
 }
 
 function getToolName(tool) {
@@ -881,6 +1312,9 @@ async function handleSelectedFiles(files) {
 
     currentPdfPath = newPdfPath;
     updateStatus(`已选择：${selectedFiles[0].name}`);
+
+    // Save last opened file path
+    await updateSetting('lastFilePath', currentPdfPath);
 
     // Clear thumbnail cache when opening a new PDF
     renderedThumbnails.clear();
@@ -1285,8 +1719,14 @@ function handlePageMouseDown(e, pageNum) {
 
   // Get page dimensions from canvas container
   const container = e.target.parentElement;
-  pdfEditor.pageWidth = parseFloat(container.style.width) || e.target.width;
-  pdfEditor.pageHeight = parseFloat(container.style.height) || e.target.height;
+  // Use getBoundingClientRect to get actual rendered size (accounts for CSS transform/scale)
+  const containerRect = container.getBoundingClientRect();
+  pdfEditor.pageWidth = containerRect.width;
+  pdfEditor.pageHeight = containerRect.height;
+  pdfEditor.scale = currentZoom / 100;
+
+  // Update debug panel
+  updateTextDebugPanel(`点击事件 | page=${pageNum} | tool=${currentTool} | pdfTool=${pdfEditor.currentTool} | textItems=${pdfEditor.textItems ? pdfEditor.textItems.length : 0}`);
 
   // Load background cache from canvas dataset if available
   if (e.target.dataset.backgroundCache) {
@@ -1302,7 +1742,57 @@ function handlePageMouseDown(e, pageNum) {
     }
   }
 
-  pdfEditor.handleMouseDown(e);
+  // Load text content for this page if using text tool
+  if (currentTool === 'text') {
+    const cacheKey = `page_${pageNum}`;
+    const isCached = pdfEditor.textItemsCache && pdfEditor.textItemsCache.has(cacheKey);
+
+    updateTextDebugPanel(`text工具点击 | isCached=${isCached} | textItems=${pdfEditor.textItems ? pdfEditor.textItems.length : 0}`);
+
+    if (isCached) {
+      // Text already cached - handle click synchronously for instant response
+      pdfEditor.textItems = pdfEditor.textItemsCache.get(cacheKey);
+      const textStatus = pdfEditor.getTextStatus();
+      if (textStatus.status === 'editable') {
+        updatePdfStatus('editable', `${textStatus.itemCount} 个文本项`);
+      } else if (textStatus.status === 'empty') {
+        updatePdfStatus('scanned', '此页面无文本内容');
+      } else if (textStatus.status === 'error') {
+        updatePdfStatus('error', textStatus.message);
+      }
+      pdfEditor.handleMouseDown(e);
+    } else {
+      // Text not cached - load asynchronously, then handle click
+      updatePdfStatus('checking', '正在检查文档...');
+      pdfEditor.loadTextForPage(pageNum).then(() => {
+        const textStatus = pdfEditor.getTextStatus();
+        updateTextDebugPanel(`文本加载完成 | items=${textStatus.itemCount} | status=${textStatus.status}`);
+        if (textStatus.status === 'editable') {
+          updatePdfStatus('editable', `${textStatus.itemCount} 个文本项`);
+        } else if (textStatus.status === 'empty') {
+          updatePdfStatus('scanned', '此页面无文本内容');
+        } else if (textStatus.status === 'error') {
+          updatePdfStatus('error', textStatus.message);
+        }
+        pdfEditor.handleMouseDown(e);
+      });
+    }
+  } else {
+    pdfEditor.handleMouseDown(e);
+  }
+}
+
+function updateTextDebugPanel(message) {
+  const textDebugContent = document.getElementById('textDebugContent');
+  if (textDebugContent) {
+    textDebugContent.innerHTML = `
+      <div>工具: ${currentTool}</div>
+      <div>pdfEditor.tool: ${pdfEditor ? pdfEditor.currentTool : 'N/A'}</div>
+      <div>pdfEditor.textItems: ${pdfEditor && pdfEditor.textItems ? pdfEditor.textItems.length : 'null'}</div>
+      <div>currentPage: ${pdfEditor ? pdfEditor.currentPage : 'N/A'}</div>
+      <div style="margin-top: 5px; color: #856404;">${message}</div>
+    `;
+  }
 }
 
 function handlePageMouseMove(e, pageNum) {
@@ -1334,7 +1824,16 @@ async function initEditor() {
   try {
     updateStatus('正在加载编辑器...');
 
+    // Initialize PDF.js first (before pdfEditor.init which depends on it)
+    await initPDFJS();
+
     pdfEditor = new PDFEditor();
+    
+    // Set up undo/redo status change handler
+    pdfEditor.setOnChange((status) => {
+      updateUndoRedoUI(status);
+    });
+
     // Initialize editor (pdfCanvas is null in multi-page mode, each page has its own canvas)
     const info = await pdfEditor.init(null, currentPdfPath);
     totalPages = info.totalPages;
@@ -1495,6 +1994,31 @@ async function scrollToPage(pageNum) {
     item.classList.toggle('active', parseInt(item.dataset.page) === currentPage);
   });
 
+  // Load text content for the new page if using text tool
+  if (pdfEditor && currentTool === 'text') {
+    const pageWrapper = pageElement;
+    if (pageWrapper) {
+      const canvas = pageWrapper.querySelector('.page-canvas');
+      if (canvas) {
+        const container = canvas.parentElement;
+        // Use getBoundingClientRect to get actual rendered size (accounts for CSS transform/scale)
+        const containerRect = container.getBoundingClientRect();
+        pdfEditor.pageWidth = containerRect.width;
+        pdfEditor.pageHeight = containerRect.height;
+        pdfEditor.scale = currentZoom / 100;
+      }
+    }
+    await pdfEditor.loadTextForPage(pageNum);
+    const textStatus = pdfEditor.getTextStatus();
+    if (textStatus.status === 'editable') {
+      updatePdfStatus('editable', `${textStatus.itemCount} 个文本项`);
+    } else if (textStatus.status === 'empty') {
+      updatePdfStatus('scanned', '此页面无文本内容');
+    } else if (textStatus.status === 'error') {
+      updatePdfStatus('error', textStatus.message);
+    }
+  }
+
   // Restart background loading with new priority when page changes
   if (backgroundPageLoader) {
     backgroundPageLoader.loadNextPage();
@@ -1590,20 +2114,46 @@ function setZoom(level) {
   updateStatus(`缩放：${currentZoom}%`);
 
   // Re-render at higher resolution if zoom > 100%
-  if (pdfEditor && currentZoom > 100) {
-    // Debounce re-render to avoid rapid re-renders during zoom
-    if (window.zoomRenderTimeout) {
-      clearTimeout(window.zoomRenderTimeout);
-    }
-    window.zoomRenderTimeout = setTimeout(() => {
-      const newScale = (currentZoom / 100) * pdfEditor.scale;
-      if (newScale > pdfEditor.scale) {
-        // Re-render all pages at higher resolution
-        pdfEditor.scale = newScale;
-        renderAllPages();
+  if (pdfEditor) {
+    // Always update pdfEditor.scale to stay in sync with currentZoom
+    // This ensures text tool hit detection works correctly at all zoom levels
+    pdfEditor.scale = currentZoom / 100;
+
+    if (currentZoom > 100) {
+      // Debounce re-render to avoid rapid re-renders during zoom
+      if (window.zoomRenderTimeout) {
+        clearTimeout(window.zoomRenderTimeout);
       }
-    }, 500);
+      window.zoomRenderTimeout = setTimeout(() => {
+        const newScale = (currentZoom / 100) * pdfEditor.scale;
+        if (newScale > pdfEditor.scale) {
+          // Re-render all pages at higher resolution
+          pdfEditor.scale = newScale;
+          renderAllPages();
+        }
+      }, 500);
+    }
   }
+}
+
+// Update undo/redo UI states
+function updateUndoRedoUI(status) {
+  const undoBtns = [document.getElementById('undoBtn'), document.getElementById('undoToolbarBtn')];
+  const redoBtns = [document.getElementById('redoBtn'), document.getElementById('redoToolbarBtn')];
+
+  undoBtns.forEach(btn => {
+    if (btn) {
+      btn.disabled = !status.canUndo;
+      btn.classList.toggle('disabled', !status.canUndo);
+    }
+  });
+
+  redoBtns.forEach(btn => {
+    if (btn) {
+      btn.disabled = !status.canRedo;
+      btn.classList.toggle('disabled', !status.canRedo);
+    }
+  });
 }
 
 // Handle undo
@@ -1673,90 +2223,87 @@ async function handleSavePDF() {
 
 // Operation handlers
 async function handleMerge() {
-  try {
-    // Open file picker to select multiple PDF files for merging
-    updateStatus('请选择要合并的 PDF 文件（至少 2 个）');
-    const result = await window.pdfAPI.pickPDF();
+  openMergeModal();
+}
 
-    if (result.canceled || !result.filePaths || result.filePaths.length < 2) {
-      updateStatus('合并已取消：需要选择至少 2 个 PDF 文件');
+async function performMerge() {
+  try {
+    if (mergeFiles.length < 2) {
+      alert('请至少选择 2 个 PDF 文件进行合并');
       return;
     }
 
-    currentOperation = 'merge';
-    const filePaths = result.filePaths;
-
-    updateStatus(`正在合并 ${filePaths.length} 个 PDF 文件...`);
-    const mergedBuffer = await window.pdfAPI.merge(filePaths);
+    updateStatus(`正在合并 ${mergeFiles.length} 个 PDF 文件...`);
+    const mergedBuffer = await window.pdfAPI.merge(mergeFiles);
 
     // Extract filename from last selected file for naming
-    const lastFileName = filePaths[filePaths.length - 1].split(/[\\/]/).pop().replace('.pdf', '');
+    const lastFileName = mergeFiles[mergeFiles.length - 1].split(/[\\/]/).pop().replace('.pdf', '');
     saveFile(mergedBuffer, `${lastFileName}_merged.pdf`);
-    updateStatus(`合并完成，共 ${filePaths.length} 个文件`);
+    updateStatus(`合并完成，共 ${mergeFiles.length} 个文件`);
+    closeMergeModalFunc();
   } catch (error) {
     handleError(error);
   }
 }
 
 async function handleSplit() {
+  openSplitModal();
+}
+
+async function performSplit() {
   try {
-    // Use currently loaded PDF or prompt user to select one
-    let pdfPath = currentPdfPath;
+    const pdfPath = currentPdfPath;
+    if (!pdfPath) return;
 
-    if (!pdfPath) {
-      updateStatus('请选择要拆分的 PDF 文件');
-      const result = await window.pdfAPI.pickPDF();
-      if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
-        updateStatus('拆分已取消');
-        return;
-      }
-      pdfPath = result.filePaths[0];
+    const rangesInput = document.getElementById('splitRanges');
+    const ranges = rangesInput.value.trim();
+    
+    if (!ranges) {
+      alert('请输入拆分范围');
+      return;
     }
-
-    // Get PDF info to show total pages
-    const pdfInfo = await window.pdfAPI.loadPDF(pdfPath);
-    const totalPages = pdfInfo.pageCount;
-
-    currentOperation = 'split';
-    const ranges = prompt(
-      `输入拆分范围（如：1-3,4-5）\nPDF 共 ${totalPages} 页\n\n支持格式：\n- 单页：5\n- 范围：1-3\n- 多个范围：1-3,5,7-9`
-    );
-    if (!ranges) return;
 
     updateStatus('正在拆分 PDF...');
     const splitBuffers = await window.pdfAPI.split(pdfPath, ranges.split(','));
-    splitBuffers.forEach((buffer, index) => {
-      saveFile(buffer, `split_${index + 1}.pdf`);
-    });
-    updateStatus(`拆分完成，共 ${splitBuffers.length} 个文件`);
+    
+    if (splitBuffers && splitBuffers.length > 0) {
+      splitBuffers.forEach((buffer, index) => {
+        saveFile(buffer, `split_${index + 1}.pdf`);
+      });
+      updateStatus(`拆分完成，共 ${splitBuffers.length} 个文件`);
+      closeSplitModalFunc();
+    }
   } catch (error) {
     handleError(error);
   }
 }
 
 async function handleWatermark() {
-  try {
-    // Use currently loaded PDF or prompt user to select one
-    let pdfPath = currentPdfPath;
+  openWatermarkModal();
+}
 
+async function performWatermark() {
+  try {
+    const pdfPath = currentPdfPath;
     if (!pdfPath) {
-      updateStatus('请选择要添加水印的 PDF 文件');
-      const result = await window.pdfAPI.pickPDF();
-      if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
-        updateStatus('操作已取消');
-        return;
-      }
-      pdfPath = result.filePaths[0];
+      alert('请先打开 PDF 文件');
+      return;
     }
 
-    currentOperation = 'watermark';
-    const watermarkText = prompt('输入水印文字');
-    if (!watermarkText) return;
+    const textInput = document.getElementById('watermarkText');
+    const text = textInput.value.trim();
+    if (!text) {
+      alert('请输入水印文字');
+      return;
+    }
+
+    const opacity = parseInt(document.getElementById('watermarkOpacity').value) / 100;
 
     updateStatus('正在添加水印...');
-    const watermarkedBuffer = await window.pdfAPI.watermark(pdfPath, watermarkText);
+    const watermarkedBuffer = await window.pdfAPI.watermark(pdfPath, text, { opacity });
     saveFile(watermarkedBuffer, 'watermarked.pdf');
     updateStatus('水印添加完成');
+    closeWatermarkModalFunc();
   } catch (error) {
     handleError(error);
   }
@@ -1787,61 +2334,54 @@ async function handleRotatePage(degrees) {
 
 // Delete page handler
 async function handleDeletePage() {
-  try {
-    if (!currentPdfPath) {
-      updateStatus('请先打开 PDF 文件');
-      return;
-    }
+  if (!currentPdfPath) {
+    updateStatus('请先打开 PDF 文件');
+    return;
+  }
 
-    // Determine which pages to delete
+  // Determine which pages to delete
+  let pagesToDelete;
+  if (selectedPages.size > 0) {
+    pagesToDelete = Array.from(selectedPages).sort((a, b) => a - b);
+  } else {
+    pagesToDelete = [currentPage];
+  }
+
+  openDeletePageModal(pagesToDelete);
+}
+
+async function performDeletePages() {
+  try {
     let pagesToDelete;
     if (selectedPages.size > 0) {
-      // Use selected pages
       pagesToDelete = Array.from(selectedPages).sort((a, b) => a - b);
     } else {
-      // Use current page
       pagesToDelete = [currentPage];
     }
 
-    // First confirmation: show which pages will be deleted
-    const pageList = pagesToDelete.length <= 10
-      ? pagesToDelete.join(', ')
-      : `${pagesToDelete.slice(0, 10).join(', ')}...`;
-
-    if (!confirm(`将删除以下 ${pagesToDelete.length} 页：${pageList}\n确定要删除吗？`)) {
-      return;
-    }
-
     updateStatus('正在删除页面...');
-
-    // Delete the pages
     const deletedBuffer = await window.pdfAPI.deletePages(currentPdfPath, pagesToDelete);
 
-    // Ask user how to save
-    const saveChoice = confirm('点击"确定"保存到原文件\n点击"取消"另存为新文件');
+    const saveToOriginal = document.getElementById('saveToOriginal').checked;
 
-    if (saveChoice) {
-      // Save to original path
+    if (saveToOriginal) {
       await window.pdfAPI.writeFile(currentPdfPath, deletedBuffer);
       updateStatus(`已删除 ${pagesToDelete.length} 页并保存`);
+      closeDeletePageModalFunc();
+      clearPageSelection();
+      await reloadCurrentPDF();
     } else {
-      // Save as new file
       const result = await window.pdfAPI.saveDialog('modified.pdf');
       if (!result.canceled && result.filePath) {
         await window.pdfAPI.writeFile(result.filePath, deletedBuffer);
         updateStatus(`已删除 ${pagesToDelete.length} 页并另存为`);
-      } else {
-        updateStatus('已取消保存');
-        // Clear selection and reload to restore UI state since PDF was modified in memory
+        closeDeletePageModalFunc();
         clearPageSelection();
         await reloadCurrentPDF();
-        return;
+      } else {
+        updateStatus('已取消保存');
       }
     }
-
-    // Clear selection and reload
-    clearPageSelection();
-    await reloadCurrentPDF();
   } catch (error) {
     handleError(error);
   }
@@ -1955,30 +2495,39 @@ async function handleExportImage(mode) {
 
 // Protect PDF handler
 async function handleProtectPDF() {
+  openProtectModal();
+}
+
+async function performProtect() {
   try {
     if (!currentPdfPath) {
-      updateStatus('请先打开 PDF 文件');
+      alert('请先打开 PDF 文件');
       return;
     }
 
-    const userPassword = prompt('请输入打开密码：');
-    if (!userPassword) return;
+    const userPassword = document.getElementById('userPassword').value;
+    if (!userPassword) {
+      alert('请输入打开密码');
+      return;
+    }
 
-    const ownerPassword = prompt('请输入所有者密码（可选，留空则使用打开密码）：') || null;
+    const ownerPassword = document.getElementById('ownerPassword').value || null;
+    const permissions = {
+      printing: document.getElementById('allowPrinting').checked ? 'highResolution' : 'none',
+      modifying: document.getElementById('allowModifying').checked,
+      copying: document.getElementById('allowCopying').checked,
+      annotating: document.getElementById('allowModifying').checked
+    };
 
     updateStatus('正在加密 PDF...');
-    const protectedBuffer = await window.pdfAPI.protect(currentPdfPath, userPassword, ownerPassword, {
-      printing: 'highResolution',
-      modifying: false,
-      copying: false,
-      annotating: false
-    });
+    const protectedBuffer = await window.pdfAPI.protect(currentPdfPath, userPassword, ownerPassword, permissions);
 
     // Save the protected file
     const result = await window.pdfAPI.saveDialog('protected.pdf');
     if (!result.canceled && result.filePath) {
       await window.pdfAPI.writeFile(result.filePath, protectedBuffer);
       updateStatus(`PDF 已加密保护，已保存到：${result.filePath}`);
+      closeProtectModalFunc();
     }
   } catch (error) {
     handleError(error);
@@ -2057,8 +2606,54 @@ function updateStatus(message) {
   }
 }
 
+function updatePdfStatus(status, details) {
+  const pdfStatus = document.getElementById('pdfStatus');
+  if (!pdfStatus) return;
+
+  pdfStatus.className = 'pdf-status-indicator ' + status;
+
+  const statusTexts = {
+    loading: '正在加载...',
+    checking: '正在检查文档...',
+    editable: '✅ 可编辑',
+    scanned: '⚠️ 扫描件',
+    protected: '🔒 受保护',
+    error: '❌ 加载失败',
+    empty: '⚠️ 无文本'
+  };
+
+  pdfStatus.textContent = statusTexts[status] || status;
+
+  if (details) {
+    pdfStatus.title = details;
+  }
+}
+
 // Initialize on load
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   initEventListeners();
   updateStatus('准备就绪');
+
+  // Load settings and auto-open last file if enabled
+  await loadAppSettings();
+
+  // Auto-open last file if setting is enabled and file exists
+  if (appSettings.openLastFile && appSettings.lastFilePath) {
+    try {
+      const fs = await window.pdfAPI.readFile(appSettings.lastFilePath);
+      if (fs && fs.length > 0) {
+        updateStatus('正在打开上次文件...');
+        const fileName = appSettings.lastFilePath.split(/[\\/]/).pop();
+        const files = [{
+          path: appSettings.lastFilePath,
+          name: fileName
+        }];
+        await handleSelectedFiles(files);
+        return;
+      }
+    } catch (error) {
+      console.log('Last file no longer exists:', appSettings.lastFilePath);
+      await updateSetting('lastFilePath', '');
+    }
+  }
 });

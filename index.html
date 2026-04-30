@@ -15,6 +15,7 @@
         <div class="menu-item" data-action="edit">编辑</div>
         <div class="menu-item" data-action="view">视图</div>
         <div class="menu-item" data-action="tools">工具</div>
+        <div class="menu-item" data-action="settings">设置</div>
         <div class="menu-item" data-action="help">帮助</div>
       </div>
       <div class="app-title">PDF Editor</div>
@@ -22,6 +23,28 @@
         <span class="window-btn minimize">─</span>
         <span class="window-btn maximize">□</span>
         <span class="window-btn close">×</span>
+      </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div class="modal-overlay" id="settingsModal">
+      <div class="modal">
+        <div class="modal-header">
+          <h3>设置</h3>
+          <button class="modal-close" id="closeSettingsModal">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group checkbox-group">
+            <label>
+              <input type="checkbox" id="openLastFileCheckbox">
+              启动时自动打开上次文件
+            </label>
+          </div>
+          <p class="form-hint" id="lastFilePathHint"></p>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-primary" id="closeSettingsModalBtn">关闭</button>
+        </div>
       </div>
     </div>
 
@@ -58,28 +81,28 @@
       </div>
       <div class="toolbar-divider"></div>
       <div class="toolbar-group">
-        <button class="toolbar-btn tool-btn" data-tool="select" title="选择工具">
+        <button class="toolbar-btn tool-btn" data-tool="select" data-tooltip="选择工具">
           <span class="icon">↖</span>
         </button>
-        <button class="toolbar-btn tool-btn" data-tool="hand" title="抓手工具">
+        <button class="toolbar-btn tool-btn" data-tool="hand" data-tooltip="抓手工具">
           <span class="icon">✋</span>
         </button>
-        <button class="toolbar-btn tool-btn" data-tool="text" title="文本工具">
+        <button class="toolbar-btn tool-btn" data-tool="text" data-tooltip="文本工具">
           <span class="icon">T</span>
         </button>
-        <button class="toolbar-btn tool-btn" data-tool="image" title="图片工具">
+        <button class="toolbar-btn tool-btn" data-tool="image" data-tooltip="图片工具">
           <span class="icon">🖼</span>
         </button>
-        <button class="toolbar-btn tool-btn" data-tool="eraser" title="橡皮擦">
+        <button class="toolbar-btn tool-btn" data-tool="eraser" data-tooltip="橡皮擦">
           <span class="icon">🧽</span>
         </button>
       </div>
       <div class="toolbar-divider"></div>
       <div class="toolbar-group">
-        <button class="toolbar-btn tool-btn" data-tool="highlight" title="高亮工具">
+        <button class="toolbar-btn tool-btn" data-tool="highlight" data-tooltip="高亮工具">
           <span class="icon icon-highlight">H</span>
         </button>
-        <button class="toolbar-btn tool-btn" data-tool="underline" title="下划线工具">
+        <button class="toolbar-btn tool-btn" data-tool="underline" data-tooltip="下划线工具">
           <span class="icon">U̲</span>
         </button>
       </div>
@@ -148,11 +171,15 @@
             </div>
             <h3>欢迎使用 PDF Editor</h3>
             <p>打开一个 PDF 文件开始编辑</p>
-            <button class="btn-primary" id="welcomeOpenBtn">打开文件</button>
+            <button class="btn btn-primary" id="welcomeOpenBtn">打开文件</button>
           </div>
 
           <!-- Tool Properties (shown when tool selected) -->
           <div class="tool-properties" id="toolProperties" style="display: none;">
+            <div class="property-section" id="textDebugInfo" style="display: none; background: #fff3cd; padding: 8px; border-radius: 4px; margin-bottom: 10px;">
+              <h4 style="margin: 0 0 5px 0; font-size: 12px;">文本调试信息</h4>
+              <div id="textDebugContent" style="font-size: 11px; font-family: monospace;"></div>
+            </div>
             <div class="property-section">
               <h4 class="property-title">工具设置</h4>
 
@@ -200,7 +227,7 @@
 
               <!-- Image Options -->
               <div class="property-group" id="imageOptions" style="display: none;">
-                <button class="btn-secondary" id="selectImageBtn">选择图片</button>
+                <button class="btn btn-secondary" id="selectImageBtn">选择图片</button>
                 <span id="selectedImageName" class="image-name"></span>
               </div>
 
@@ -246,6 +273,7 @@
               <h4 class="property-title">操作</h4>
               <div class="action-buttons">
                 <button class="action-btn" id="undoBtn">撤销</button>
+                <button class="action-btn" id="redoBtn">重做</button>
                 <button class="action-btn" id="clearBtn">清除所有</button>
                 <button class="action-btn btn-save" id="saveEditBtn">保存 PDF</button>
               </div>
@@ -294,6 +322,8 @@
     <div class="status-bar">
       <div class="status-left">
         <span id="statusMessage">准备就绪</span>
+        <span class="status-divider">|</span>
+        <span id="pdfStatus" class="pdf-status-indicator">--</span>
       </div>
       <div class="status-right">
         <span id="pageStatus">页面：--</span>
@@ -324,6 +354,7 @@
             <li><strong>编辑</strong> - 撤销、重做操作</li>
             <li><strong>视图</strong> - 缩放、页面显示设置</li>
             <li><strong>工具</strong> - 选择各种编辑工具</li>
+            <li><strong>设置</strong> - 配置应用选项</li>
             <li><strong>帮助</strong> - 查看本帮助文档</li>
           </ul>
         </div>
@@ -354,7 +385,7 @@
         </div>
       </div>
       <div class="modal-footer">
-        <button class="btn-primary" id="closeHelpModalBtn">关闭</button>
+        <button class="btn btn-primary" id="closeHelpModalBtn">关闭</button>
       </div>
     </div>
   </div>
@@ -377,8 +408,129 @@
         </div>
       </div>
       <div class="modal-footer">
-        <button class="btn-secondary" id="cancelBookmarkBtn">取消</button>
-        <button class="btn-primary" id="saveBookmarkBtn">保存</button>
+        <button class="btn btn-secondary" id="cancelBookmarkBtn">取消</button>
+        <button class="btn btn-primary" id="saveBookmarkBtn">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Merge PDF Modal -->
+  <div class="modal-overlay" id="mergeModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="mergeModalTitle">合并 PDF</h3>
+        <button class="modal-close" id="closeMergeModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="merge-files-container">
+          <div class="merge-files-list" id="mergeFilesList"></div>
+          <button class="btn btn-secondary" id="addMergeFilesBtn">+ 添加文件</button>
+        </div>
+        <p class="form-hint">可以拖动文件调整合并顺序</p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" id="cancelMergeModal">取消</button>
+        <button class="btn btn-primary" id="confirmMergeBtn">确定合并</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Split PDF Modal -->
+  <div class="modal-overlay" id="splitModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="splitModalTitle">拆分 PDF</h3>
+        <button class="modal-close" id="closeSplitModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p id="splitModalPagesInfo">PDF 共 0 页</p>
+        <div class="form-group">
+          <label for="splitRanges">拆分范围</label>
+          <input type="text" id="splitRanges" placeholder="如：1-3, 4-5, 7" />
+          <p class="form-hint">支持格式：单页(5), 范围(1-3), 多个范围(1-3,5,7-9)</p>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="cancelSplitModal">取消</button>
+        <button class="btn btn-primary" id="confirmSplitBtn">确定拆分</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Watermark Modal -->
+  <div class="modal-overlay" id="watermarkModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>添加水印</h3>
+        <button class="modal-close" id="closeWatermarkModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="watermarkText">水印文字</label>
+          <input type="text" id="watermarkText" placeholder="请输入水印内容" />
+        </div>
+        <div class="form-group">
+          <label for="watermarkOpacity">不透明度</label>
+          <div class="slider-container">
+            <input type="range" id="watermarkOpacity" min="1" max="100" value="40">
+            <span id="watermarkOpacityValue">40%</span>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" id="cancelWatermarkModal">取消</button>
+        <button class="btn btn-primary" id="confirmWatermarkBtn">确定添加</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Protect PDF Modal -->
+  <div class="modal-overlay" id="protectModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>设置密码保护</h3>
+        <button class="modal-close" id="closeProtectModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="userPassword">打开密码</label>
+          <input type="password" id="userPassword" placeholder="请输入打开 PDF 所需的密码" />
+        </div>
+        <div class="form-group">
+          <label for="ownerPassword">所有者密码 (可选)</label>
+          <input type="password" id="ownerPassword" placeholder="留空则使用打开密码" />
+          <p class="form-hint">所有者密码用于限制打印、复制等权限</p>
+        </div>
+        <div class="form-group checkbox-group">
+          <label><input type="checkbox" id="allowPrinting" checked> 允许打印</label>
+          <label><input type="checkbox" id="allowCopying" checked> 允许复制内容</label>
+          <label><input type="checkbox" id="allowModifying"> 允许修改文档</label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" id="cancelProtectModal">取消</button>
+        <button class="btn btn-primary" id="confirmProtectBtn">确定加密</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete Page Modal -->
+  <div class="modal-overlay" id="deletePageModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>删除页面</h3>
+        <button class="modal-close" id="closeDeletePageModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p id="deletePageWarning">确定要删除选中的页面吗？</p>
+        <p class="form-hint">此操作不可撤销，建议在操作前备份原文件。</p>
+        <div class="form-group" style="margin-top: 15px;">
+          <label><input type="checkbox" id="saveToOriginal" checked> 直接保存到原文件</label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" id="cancelDeletePageModal">取消</button>
+        <button class="btn btn-danger" id="confirmDeletePageBtn">确定删除</button>
       </div>
     </div>
   </div>

@@ -1,45 +1,31 @@
-// Input validation helpers
-function validateString(value, name) {
-  if (typeof value !== 'string' || value.length === 0) {
-    throw new Error(`${name} must be a non-empty string`);
-  }
-  return value;
+const { PDFDocument, rgb, StandardFonts, degrees, PDFName, PDFDict, PDFNumber, PDFString, PDFArray, PDFRef, PDFHexString } = require('pdf-lib');
+const fs = require('fs').promises;
+const {
+  validateString,
+  validateArray,
+  validateNumber
+} = require('./validation');
+
+let fontkit = null;
+try {
+  fontkit = require('@pdf-lib/fontkit');
+} catch (error) {
+  fontkit = null;
 }
 
-function validateArray(value, name) {
-  if (!Array.isArray(value)) {
-    throw new Error(`${name} must be an array`);
-  }
-  return value;
-}
-
-function validateNumber(value, name) {
-  if (typeof value !== 'number' || isNaN(value)) {
-    throw new Error(`${name} must be a valid number`);
-  }
-  return value;
-}
-
-// Shared helper: Load PDF document with error handling
-// Avoids duplicating the same file read + load pattern in every function
 async function loadPdfDocument(filePath) {
   validateString(filePath, 'filePath');
   try {
     const fileData = await fs.readFile(filePath);
     return await PDFDocument.load(fileData);
   } catch (error) {
-    throw new Error(`无法读取 PDF 文件：${error.message}`);
+    throw new Error(`Failed to read PDF file: ${error.message}`);
   }
 }
-
-const { PDFDocument, rgb, StandardFonts, degrees } = require('pdf-lib');
-const { PDFName, PDFDict, PDFNumber, PDFString, PDFArray, PDFRef } = require('pdf-lib');
-const fs = require('fs').promises;
 
 async function mergePDFs(filePaths) {
   validateArray(filePaths, 'filePaths');
 
-  // Read and load all PDFs in parallel for efficiency
   const pdfDocs = await Promise.all(
     filePaths.map(async (filePath) => {
       validateString(filePath, 'filePath');
@@ -47,7 +33,7 @@ async function mergePDFs(filePaths) {
         const fileData = await fs.readFile(filePath);
         return await PDFDocument.load(fileData);
       } catch (error) {
-        throw new Error(`无法读取 PDF 文件 ${filePath}: ${error.message}`);
+        throw new Error(`Failed to read PDF file ${filePath}: ${error.message}`);
       }
     })
   );
@@ -73,7 +59,6 @@ async function splitPDF(filePath, ranges) {
 
   const result = [];
   for (const range of ranges) {
-    // Support both single page (e.g., "5") and range (e.g., "1-3")
     const pageIndices = parsePageRange(range.trim(), totalPages);
     const newDoc = await PDFDocument.create();
     const pages = await newDoc.copyPages(pdfDoc, pageIndices);
@@ -84,7 +69,7 @@ async function splitPDF(filePath, ranges) {
   return result.map(b => Buffer.from(b));
 }
 
-async function addWatermark(filePath, text) {
+async function addWatermark(filePath, text, options = {}) {
   validateString(filePath, 'filePath');
   validateString(text, 'text');
 
@@ -92,16 +77,17 @@ async function addWatermark(filePath, text) {
 
   const pages = pdfDoc.getPages();
   const font = await pdfDoc.embedFont('Helvetica');
+  const opacity = options.opacity !== undefined ? options.opacity : 0.5;
 
   pages.forEach(page => {
     const { width, height } = page.getSize();
     page.drawText(text, {
-      x: width / 2 - 50,
+      x: width / 2 - 100,
       y: height / 2,
-      size: 24,
+      size: 40,
       font,
       color: rgb(0.5, 0.5, 0.5),
-      opacity: 0.5,
+      opacity: opacity,
       rotate: degrees(-45)
     });
   });
@@ -109,11 +95,6 @@ async function addWatermark(filePath, text) {
   return Buffer.from(await pdfDoc.save());
 }
 
-/**
- * Load a PDF document and return document info
- * @param {string} filePath - Path to PDF file
- * @returns {Promise<object>} PDF document info
- */
 async function loadPDF(filePath) {
   const pdfDoc = await loadPdfDocument(filePath);
 
@@ -123,12 +104,6 @@ async function loadPDF(filePath) {
   };
 }
 
-/**
- * Apply edit operations to a PDF
- * @param {string} filePath - Path to PDF file
- * @param {Array} operations - Array of edit operations
- * @returns {Promise<Buffer>} Modified PDF buffer
- */
 async function applyEdits(filePath, operations) {
   validateString(filePath, 'filePath');
   validateArray(operations, 'operations');
@@ -140,12 +115,82 @@ async function applyEdits(filePath, operations) {
     fileData = await fs.readFile(filePath);
     pdfDoc = await PDFDocument.load(fileData);
   } catch (error) {
-    throw new Error(`无法读取 PDF 文件：${error.message}`);
+    throw new Error(`Failed to read PDF file: ${error.message}`);
   }
 
-  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const fontCache = {};
+  if (fontkit && typeof pdfDoc.registerFontkit === 'function') {
+    pdfDoc.registerFontkit(fontkit);
+  }
 
-  // Group operations by page
+  async function findChineseFont() {
+    const fontPaths = [
+      '/System/Library/Fonts/Supplemental/Arial Unicode.ttf',
+      '/Library/Fonts/Arial Unicode.ttf',
+      '/System/Library/Fonts/PingFang.ttc',
+      '/usr/share/fonts/truetype/wqy/wqy-microhei.ttc',
+      'C:\\Windows\\Fonts\\simsun.ttc',
+    ];
+
+    for (const fontPath of fontPaths) {
+      try {
+        await fs.access(fontPath);
+        return fontPath;
+      } catch (e) {
+        // Continue searching
+      }
+    }
+    return null;
+  }
+
+  function containsNonWinAnsiText(text) {
+    return typeof text === 'string' && /[^\u0000-\u00ff]/.test(text);
+  }
+
+  async function getFont(pdfDoc, fontName, fontPath = null, text = '') {
+    const needsUnicodeFont = containsNonWinAnsiText(text);
+    const resolvedFontPath = fontPath || (needsUnicodeFont ? await findChineseFont() : null);
+    const cacheKey = `${pdfDoc.docId}_${fontName}_${resolvedFontPath || 'default'}_${needsUnicodeFont ? 'unicode' : 'latin'}`;
+    if (fontCache[cacheKey]) {
+      return fontCache[cacheKey];
+    }
+
+    let font;
+    const normalizedName = fontName.toLowerCase().replace(/\s+/g, '');
+
+    try {
+      if (resolvedFontPath) {
+        if (!fontkit) {
+          throw new Error('Writing Chinese text requires @pdf-lib/fontkit');
+        }
+        try {
+          await fs.access(resolvedFontPath);
+          const fontBytes = await fs.readFile(resolvedFontPath);
+          font = await pdfDoc.embedFont(fontBytes);
+        } catch (e) {
+          console.warn(`Font file not found: ${resolvedFontPath}, using fallback`);
+          font = pdfDoc.embedFont(StandardFonts.Helvetica);
+        }
+      } else if (normalizedName.includes('simsun') || normalizedName.includes('songti')) {
+        font = pdfDoc.embedFont(StandardFonts.Helvetica);
+      } else if (normalizedName.includes('times')) {
+        font = pdfDoc.embedFont(StandardFonts.TimesRoman);
+      } else {
+        try {
+          font = await pdfDoc.embedFont(fontName);
+        } catch (e) {
+          font = pdfDoc.embedFont(StandardFonts.Helvetica);
+        }
+      }
+    } catch (error) {
+      console.warn(`Failed to load font ${fontName}, using Helvetica fallback:`, error.message);
+      font = pdfDoc.embedFont(StandardFonts.Helvetica);
+    }
+
+    fontCache[cacheKey] = font;
+    return font;
+  }
+
   const opsByPage = {};
   operations.forEach(op => {
     if (!opsByPage[op.page]) {
@@ -154,21 +199,17 @@ async function applyEdits(filePath, operations) {
     opsByPage[op.page].push(op);
   });
 
-  // Apply operations for each page
   for (const [pageNum, pageOps] of Object.entries(opsByPage)) {
     const pageIndex = parseInt(pageNum) - 1;
     const page = pdfDoc.getPage(pageIndex);
     const { width, height } = page.getSize();
 
     for (const op of pageOps) {
-      // Convert canvas coordinates to PDF coordinates
-      // Canvas Y is from top, PDF Y is from bottom
       const pdfX = op.x;
       const pdfY = height - op.y;
 
       switch (op.type) {
         case 'eraser':
-          // Draw white rectangle to cover content
           page.drawRectangle({
             x: pdfX,
             y: pdfY - op.height,
@@ -179,49 +220,18 @@ async function applyEdits(filePath, operations) {
           break;
 
         case 'text':
-          // Parse hex color to RGB
           const color = hexToRgb(op.color);
+          const textFont = await getFont(pdfDoc, op.fontFamily || 'Helvetica', op.fontPath, op.text);
           page.drawText(op.text, {
             x: pdfX,
             y: pdfY,
             size: op.fontSize,
-            font,
+            font: textFont,
             color: rgb(color.r / 255, color.g / 255, color.b / 255)
           });
           break;
 
-        case 'image':
-          // Load and embed image
-          let image;
-          if (op.imagePath.startsWith('data:image')) {
-            // Data URL
-            const imageData = op.imagePath.split(',')[1];
-            const buffer = Buffer.from(imageData, 'base64');
-            if (op.imagePath.includes('image/png')) {
-              image = await pdfDoc.embedPng(buffer);
-            } else {
-              image = await pdfDoc.embedJpg(buffer);
-            }
-          } else {
-            // File path
-            const imageBytes = await fs.readFile(op.imagePath);
-            if (op.imagePath.endsWith('.png')) {
-              image = await pdfDoc.embedPng(imageBytes);
-            } else {
-              image = await pdfDoc.embedJpg(imageBytes);
-            }
-          }
-
-          page.drawImage(image, {
-            x: pdfX,
-            y: pdfY - op.height,
-            width: op.width,
-            height: op.height
-          });
-          break;
-
         case 'highlight':
-          // Draw semi-transparent highlight rectangle
           const highlightColor = hexToRgb(op.color);
           page.drawRectangle({
             x: pdfX,
@@ -234,13 +244,39 @@ async function applyEdits(filePath, operations) {
           break;
 
         case 'underline':
-          // Draw underline
           const underlineColor = hexToRgb(op.color);
           page.drawLine({
             start: { x: pdfX, y: pdfY },
             end: { x: pdfX + op.width, y: pdfY },
             color: rgb(underlineColor.r / 255, underlineColor.g / 255, underlineColor.b / 255),
             thickness: op.lineWidth || 2
+          });
+          break;
+
+        case 'editText':
+          const editUsesCanvasCoordinates = op.coordinateSpace === 'canvas';
+          const editX = editUsesCanvasCoordinates ? pdfX : op.x;
+          const editY = editUsesCanvasCoordinates ? pdfY : op.y;
+
+          page.drawRectangle({
+            x: editX - 2,
+            y: editY - 2,
+            width: op.width + 4,
+            height: op.height + 4,
+            color: rgb(1, 1, 1)
+          });
+
+          const editColor = hexToRgb(op.newColor || op.color);
+          const editFontSize = op.newFontSize || op.fontSize || 12;
+          const editFontFamily = op.newFontFamily || 'Helvetica';
+          const editFont = await getFont(pdfDoc, editFontFamily, op.fontPath, op.newText);
+
+          page.drawText(op.newText, {
+            x: editX,
+            y: editY,
+            size: editFontSize,
+            font: editFont,
+            color: rgb(editColor.r / 255, editColor.g / 255, editColor.b / 255)
           });
           break;
       }
@@ -250,13 +286,7 @@ async function applyEdits(filePath, operations) {
   return Buffer.from(await pdfDoc.save());
 }
 
-/**
- * Convert hex color to RGB object
- * @param {string} hex - Hex color string (e.g., '#ff0000' or '#f00')
- * @returns {object} RGB object with r, g, b values (0-255)
- */
 function hexToRgb(hex) {
-  // Support both #ff0000 and #f00 formats
   const shorthandRegex = /^#?([a-f\d])([a-f\d])([a-f\d])$/i;
   hex = hex.replace(shorthandRegex, (m, r, g, b) => r + r + g + g + b + b);
 
@@ -268,40 +298,24 @@ function hexToRgb(hex) {
   } : { r: 0, g: 0, b: 0 };
 }
 
-/**
- * Parse page range string to array of 0-indexed page numbers
- * @param {string} range - Page range (e.g., "1-3", "5", "7-9")
- * @param {number} totalPages - Total pages in PDF for validation
- * @returns {number[]} Array of 0-indexed page numbers
- * @throws {Error} If range is invalid or out of bounds
- */
 function parsePageRange(range, totalPages) {
   const trimmed = range.trim();
 
   if (trimmed.includes('-')) {
-    // Range format: "1-3"
     const [start, end] = trimmed.split('-').map(Number);
     if (isNaN(start) || isNaN(end) || start < 1 || end > totalPages || start > end) {
-      throw new Error(`无效的页面范围：${range}`);
+      throw new Error(`Invalid page range: ${range}`);
     }
     return Array.from({ length: end - start + 1 }, (_, i) => start - 1 + i);
   } else {
-    // Single page: "5"
     const pageNum = Number(trimmed);
     if (isNaN(pageNum) || pageNum < 1 || pageNum > totalPages) {
-      throw new Error(`无效的页码：${range}`);
+      throw new Error(`Invalid page number: ${range}`);
     }
     return [pageNum - 1];
   }
 }
 
-/**
- * Rotate specific pages in a PDF
- * @param {string} filePath - Path to PDF file
- * @param {Array} pageNumbers - Page numbers to rotate (1-indexed)
- * @param {number} degrees - Degrees to rotate (90, 180, 270)
- * @returns {Promise<Buffer>} Modified PDF buffer
- */
 async function rotatePDF(filePath, pageNumbers, degrees) {
   validateString(filePath, 'filePath');
   validateArray(pageNumbers, 'pageNumbers');
@@ -314,7 +328,7 @@ async function rotatePDF(filePath, pageNumbers, degrees) {
     fileData = await fs.readFile(filePath);
     pdfDoc = await PDFDocument.load(fileData);
   } catch (error) {
-    throw new Error(`无法读取 PDF 文件：${error.message}`);
+    throw new Error(`Failed to read PDF file: ${error.message}`);
   }
 
   const pages = pdfDoc.getPages();
@@ -330,12 +344,6 @@ async function rotatePDF(filePath, pageNumbers, degrees) {
   return Buffer.from(await pdfDoc.save());
 }
 
-/**
- * Delete specific pages from a PDF
- * @param {string} filePath - Path to PDF file
- * @param {Array} pageNumbers - Page numbers to delete (1-indexed)
- * @returns {Promise<Buffer>} Modified PDF buffer
- */
 async function deletePages(filePath, pageNumbers) {
   validateString(filePath, 'filePath');
   validateArray(pageNumbers, 'pageNumbers');
@@ -347,10 +355,9 @@ async function deletePages(filePath, pageNumbers) {
     fileData = await fs.readFile(filePath);
     pdfDoc = await PDFDocument.load(fileData);
   } catch (error) {
-    throw new Error(`无法读取 PDF 文件：${error.message}`);
+    throw new Error(`Failed to read PDF file: ${error.message}`);
   }
 
-  // Sort page numbers in descending order to avoid index shifting
   const sortedPages = [...pageNumbers].sort((a, b) => b - a);
 
   sortedPages.forEach(pageNum => {
@@ -360,14 +367,6 @@ async function deletePages(filePath, pageNumbers) {
   return Buffer.from(await pdfDoc.save());
 }
 
-/**
- * Add password protection to a PDF
- * @param {string} filePath - Path to PDF file
- * @param {string} userPassword - Password to open the PDF
- * @param {string} ownerPassword - Owner password for full access
- * @param {object} permissions - Permission settings
- * @returns {Promise<Buffer>} Encrypted PDF buffer
- */
 async function protectPDF(filePath, userPassword, ownerPassword, permissions) {
   validateString(filePath, 'filePath');
   if (userPassword !== undefined) validateString(userPassword, 'userPassword');
@@ -380,7 +379,7 @@ async function protectPDF(filePath, userPassword, ownerPassword, permissions) {
     fileData = await fs.readFile(filePath);
     pdfDoc = await PDFDocument.load(fileData);
   } catch (error) {
-    throw new Error(`无法读取 PDF 文件：${error.message}`);
+    throw new Error(`Failed to read PDF file: ${error.message}`);
   }
 
   const encryptedPdf = await pdfDoc.save({
@@ -400,11 +399,6 @@ async function protectPDF(filePath, userPassword, ownerPassword, permissions) {
   return Buffer.from(encryptedPdf);
 }
 
-/**
- * Get bookmarks from a PDF
- * @param {string} filePath - Path to PDF file
- * @returns {Promise<Array>} Array of bookmark objects
- */
 async function getBookmarks(filePath) {
   validateString(filePath, 'filePath');
 
@@ -415,30 +409,26 @@ async function getBookmarks(filePath) {
     fileData = await fs.readFile(filePath);
     pdfDoc = await PDFDocument.load(fileData);
   } catch (error) {
-    throw new Error(`无法读取 PDF 文件：${error.message}`);
+    throw new Error(`Failed to read PDF file: ${error.message}`);
   }
 
   const catalog = pdfDoc.catalog;
 
-  // Get the Outlines dictionary
   const outlinesRef = catalog.get(PDFName.of('Outlines'));
   if (!outlinesRef) {
     return [];
   }
 
-  // Look up the actual Outlines object using the PDF context
   const outlines = pdfDoc.context.lookup(outlinesRef);
   if (!outlines || typeof outlines.get !== 'function') {
     return [];
   }
 
-  // Get the First bookmark
   const firstRef = outlines.get(PDFName.of('First'));
   if (!firstRef) {
     return [];
   }
 
-  // Parse bookmarks
   const bookmarks = [];
 
   function parseBookmark(bookmarkRef, level = 0) {
@@ -447,54 +437,33 @@ async function getBookmarks(filePath) {
 
     const title = bookmark.get(PDFName.of('Title'));
     const dest = bookmark.get(PDFName.of('Dest'));
-    const action = bookmark.get(PDFName.of('Action'));
 
     let pageNum = null;
     let pageIndex = null;
 
-    // Try to get destination page
-    if (dest) {
-      if (Array.isArray(dest)) {
-        const pageRef = dest[0];
-        if (pageRef && typeof pageRef === 'object' && 'gen' in pageRef) {
-          try {
-            const pageIndex_ = pdfDoc.getPageIndex(pageRef);
-            if (pageIndex_ >= 0) {
-              pageIndex = pageIndex_;
-              pageNum = pageIndex + 1;
-            }
-          } catch (e) {
-            // ignore
+    if (dest && Array.isArray(dest)) {
+      const pageRef = dest[0];
+      if (pageRef && typeof pageRef === 'object' && 'gen' in pageRef) {
+        try {
+          const pageIndex_ = pdfDoc.getPageIndex(pageRef);
+          if (pageIndex_ >= 0) {
+            pageIndex = pageIndex_;
+            pageNum = pageIndex + 1;
           }
+        } catch (e) {
+          // ignore
         }
-      }
-    } else if (action) {
-      // Handle GoTo actions
-      try {
-        const actionType = action.get(PDFName.of('S'));
-        if (actionType && actionType.toString() === 'GoTo') {
-          const actionDest = action.get(PDFName.of('D'));
-          if (actionDest && Array.isArray(actionDest)) {
-            const pageRef = actionDest[0];
-            if (pageRef && typeof pageRef === 'object' && 'gen' in pageRef) {
-              try {
-                const pageIndex_ = pdfDoc.getPageIndex(pageRef);
-                if (pageIndex_ >= 0) {
-                  pageIndex = pageIndex_;
-                  pageNum = pageIndex + 1;
-                }
-              } catch (e) {
-                // ignore
-              }
-            }
-          }
-        }
-      } catch (e) {
-        // ignore
       }
     }
 
-    const titleStr = title ? title.value : 'Untitled';
+    let titleStr = 'Untitled';
+    if (title) {
+      if (typeof title.decodeText === 'function') {
+        titleStr = title.decodeText();
+      } else if (title.value) {
+        titleStr = title.value;
+      }
+    }
 
     const result = {
       title: titleStr,
@@ -504,18 +473,36 @@ async function getBookmarks(filePath) {
       ref: bookmarkRef.toString()
     };
 
-    return result;
-  }
+    const parsedBookmarks = [result];
 
-  // Parse first level bookmarks
-  let currentRef = firstRef;
-  while (currentRef) {
-    const bookmark = parseBookmark(currentRef, 0);
-    if (bookmark) {
-      bookmarks.push(bookmark);
+    const firstChildRef = bookmark.get(PDFName.of('First'));
+    if (firstChildRef) {
+      let currentChildRef = firstChildRef;
+      while (currentChildRef) {
+        const childBookmark = parseBookmark(currentChildRef, level + 1);
+        if (childBookmark) {
+          parsedBookmarks.push(...childBookmark);
+        }
+
+        try {
+          const currentChild = pdfDoc.context.lookup(currentChildRef);
+          currentChildRef = currentChild && typeof currentChild.get === 'function' ? currentChild.get(PDFName.of('Next')) : null;
+        } catch (e) {
+          break;
+        }
+      }
     }
 
-    // Get Next reference
+    return parsedBookmarks;
+  }
+
+  let currentRef = firstRef;
+  while (currentRef) {
+    const bookmarkList = parseBookmark(currentRef, 0);
+    if (bookmarkList) {
+      bookmarks.push(...bookmarkList);
+    }
+
     try {
       const current = pdfDoc.context.lookup(currentRef);
       const nextRef = current && typeof current.get === 'function' ? current.get(PDFName.of('Next')) : null;
@@ -528,12 +515,6 @@ async function getBookmarks(filePath) {
   return bookmarks;
 }
 
-/**
- * Add bookmarks to a PDF
- * @param {string} filePath - Path to PDF file
- * @param {Array} bookmarks - Array of bookmark objects {title, page}
- * @returns {Promise<Buffer>} Modified PDF buffer
- */
 async function addBookmarks(filePath, bookmarks) {
   validateString(filePath, 'filePath');
   validateArray(bookmarks, 'bookmarks');
@@ -545,7 +526,7 @@ async function addBookmarks(filePath, bookmarks) {
     fileData = await fs.readFile(filePath);
     pdfDoc = await PDFDocument.load(fileData);
   } catch (error) {
-    throw new Error(`无法读取 PDF 文件：${error.message}`);
+    throw new Error(`Failed to read PDF file: ${error.message}`);
   }
 
   const pages = pdfDoc.getPages();
@@ -554,7 +535,6 @@ async function addBookmarks(filePath, bookmarks) {
     return Buffer.from(await pdfDoc.save());
   }
 
-  // Validate all bookmarks before modifying
   for (const bm of bookmarks) {
     if (!bm.title || typeof bm.title !== 'string') {
       throw new Error('Bookmark title must be a non-empty string');
@@ -564,30 +544,25 @@ async function addBookmarks(filePath, bookmarks) {
     }
   }
 
-  // Create outlines dictionary
   const outlinesDict = pdfDoc.context.obj({
     Type: 'Outlines',
     Count: bookmarks.length
   });
 
-  // Create bookmark refs
+  const outlinesRef = pdfDoc.context.register(outlinesDict);
   const bookmarkRefs = bookmarks.map(() => pdfDoc.context.nextRef());
 
-  // Build bookmark structure
   for (let i = 0; i < bookmarks.length; i++) {
     const bm = bookmarks[i];
     const bookmarkRef = bookmarkRefs[i];
 
-    const pageIndex = bm.page - 1; // bm.page is already validated to be >= 1
+    const pageIndex = bm.page - 1;
     const targetPage = pages[pageIndex];
 
     if (!targetPage) {
-      // This should not happen due to validation above, but handle gracefully
-      console.warn(`Skipping bookmark "${bm.title}" - page ${bm.page} does not exist`);
       continue;
     }
 
-    // Create destination array [pageRef, XYZ, left, top, zoom]
     const dest = pdfDoc.context.obj([
       targetPage.ref,
       'XYZ',
@@ -596,13 +571,12 @@ async function addBookmarks(filePath, bookmarks) {
       null
     ]);
 
-    // Create bookmark dictionary
     const bookmarkDict = pdfDoc.context.obj({
-      Title: PDFString.of(bm.title),
-      Dest: dest
+      Title: PDFHexString.fromText(bm.title),
+      Dest: dest,
+      Parent: outlinesRef
     });
 
-    // Add parent/child relationships
     if (i > 0) {
       bookmarkDict.set(PDFName.of('Prev'), bookmarkRefs[i - 1]);
     }
@@ -610,7 +584,6 @@ async function addBookmarks(filePath, bookmarks) {
       bookmarkDict.set(PDFName.of('Next'), bookmarkRefs[i + 1]);
     }
 
-    // Add to document
     pdfDoc.context.assign(bookmarkRef, bookmarkDict);
   }
 
@@ -619,8 +592,6 @@ async function addBookmarks(filePath, bookmarks) {
     outlinesDict.set(PDFName.of('Last'), bookmarkRefs[bookmarkRefs.length - 1]);
   }
 
-  // Add outlines to catalog
-  const outlinesRef = pdfDoc.context.register(outlinesDict);
   pdfDoc.catalog.set(PDFName.of('Outlines'), outlinesRef);
 
   return Buffer.from(await pdfDoc.save());

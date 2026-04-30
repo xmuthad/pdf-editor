@@ -1,26 +1,12 @@
-// Input validation helper
-function validateString(value, name) {
-  if (typeof value !== 'string' || value.length === 0) {
-    throw new Error(`${name} must be a non-empty string`);
-  }
-  return value;
-}
-
-function validateArray(value, name) {
-  if (!Array.isArray(value)) {
-    throw new Error(`${name} must be an array`);
-  }
-  return value;
-}
-
-function validateNumber(value, name) {
-  if (typeof value !== 'number' || isNaN(value)) {
-    throw new Error(`${name} must be a valid number`);
-  }
-  return value;
-}
-
 const { contextBridge, ipcRenderer } = require('electron');
+const OCREngine = require('./ocr-engine');
+const {
+  validateString,
+  validateArray,
+  validateNumber,
+  validateBuffer,
+  validateObject
+} = require('./validation');
 
 contextBridge.exposeInMainWorld('pdfAPI', {
   merge: (files) => {
@@ -37,7 +23,6 @@ contextBridge.exposeInMainWorld('pdfAPI', {
     validateString(text, 'text');
     return ipcRenderer.invoke('pdf:watermark', file, text);
   },
-  // New editor APIs
   loadPDF: (filePath) => {
     validateString(filePath, 'filePath');
     return ipcRenderer.invoke('pdf:load', filePath);
@@ -53,7 +38,7 @@ contextBridge.exposeInMainWorld('pdfAPI', {
   },
   writeFile: (filePath, buffer) => {
     validateString(filePath, 'filePath');
-    validateArray(buffer, 'buffer');
+    validateBuffer(buffer, 'buffer');
     return ipcRenderer.invoke('file:write', filePath, buffer);
   },
   pickImage: () => ipcRenderer.invoke('file:pickImage'),
@@ -61,13 +46,11 @@ contextBridge.exposeInMainWorld('pdfAPI', {
     validateString(filePath, 'filePath');
     return ipcRenderer.invoke('pdf:readFile', filePath);
   },
-  // File picker for PDF files
   pickPDF: () => ipcRenderer.invoke('file:pickPDF'),
-  // New features
   rotate: (filePath, pageNumbers, degrees) => {
     validateString(filePath, 'filePath');
     validateArray(pageNumbers, 'pageNumbers');
-    validateNumber(degrees, 'degrees');
+    validateNumber(degrees, 'degrees', -360, 360);
     return ipcRenderer.invoke('pdf:rotate', filePath, pageNumbers, degrees);
   },
   deletePages: (filePath, pageNumbers) => {
@@ -77,26 +60,18 @@ contextBridge.exposeInMainWorld('pdfAPI', {
   },
   convertToImage: (filePath, pageNum, format, scale) => {
     validateString(filePath, 'filePath');
-    validateNumber(pageNum, 'pageNum');
+    validateNumber(pageNum, 'pageNum', 1);
     if (format !== undefined) validateString(format, 'format');
-    if (scale !== undefined) validateNumber(scale, 'scale');
+    if (scale !== undefined) validateNumber(scale, 'scale', 0.1, 10);
     return ipcRenderer.invoke('pdf:convertToImage', filePath, pageNum, format, scale);
   },
   protect: (filePath, userPassword, ownerPassword, permissions) => {
     validateString(filePath, 'filePath');
     if (userPassword !== undefined) validateString(userPassword, 'userPassword');
     if (ownerPassword !== undefined) validateString(ownerPassword, 'ownerPassword');
+    if (permissions !== undefined) validateObject(permissions, 'permissions');
     return ipcRenderer.invoke('pdf:protect', filePath, userPassword, ownerPassword, permissions);
   },
-  exportImage: (filePath, pageNum, format, scale, outputPath) => {
-    validateString(filePath, 'filePath');
-    validateNumber(pageNum, 'pageNum');
-    if (format !== undefined) validateString(format, 'format');
-    if (scale !== undefined) validateNumber(scale, 'scale');
-    if (outputPath !== undefined) validateString(outputPath, 'outputPath');
-    return ipcRenderer.invoke('file:exportImage', filePath, pageNum, format, scale, outputPath);
-  },
-  // Bookmark APIs
   getBookmarks: (filePath) => {
     validateString(filePath, 'filePath');
     return ipcRenderer.invoke('pdf:getBookmarks', filePath);
@@ -105,18 +80,22 @@ contextBridge.exposeInMainWorld('pdfAPI', {
     validateString(filePath, 'filePath');
     validateArray(bookmarks, 'bookmarks');
     return ipcRenderer.invoke('pdf:addBookmarks', filePath, bookmarks);
+  },
+  getSettings: () => ipcRenderer.invoke('settings:get'),
+  setSettings: (settings) => {
+    validateObject(settings, 'settings');
+    return ipcRenderer.invoke('settings:set', settings);
   }
 });
 
-// Expose buffer helper for sandboxed renderer
+contextBridge.exposeInMainWorld('OCREngine', OCREngine);
+
 contextBridge.exposeInMainWorld('bufferHelper', {
   from: (data) => Buffer.from(data),
   toBase64: (data) => Buffer.from(data).toString('base64'),
   fromBase64: (base64) => Array.from(Buffer.from(base64, 'base64'))
 });
 
-// Expose PDF.js lib getter for editor
 contextBridge.exposeInMainWorld('getPdfjsLib', async () => {
-  // Will be set by renderer process after initialization
   return window.pdfjsLibInstance || null;
 });

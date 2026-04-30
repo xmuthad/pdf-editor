@@ -3,6 +3,29 @@ const path = require('path');
 const { mergePDFs, splitPDF, addWatermark, loadPDF, applyEdits, rotatePDF, deletePages, protectPDF, getBookmarks, addBookmarks } = require('./pdf-utils');
 const fs = require('fs').promises;
 
+const settingsPath = path.join(app.getPath('userData'), 'settings.json');
+
+async function loadSettings() {
+  try {
+    const data = await fs.readFile(settingsPath, 'utf8');
+    return JSON.parse(data);
+  } catch (error) {
+    return {};
+  }
+}
+
+async function saveSettings(settings) {
+  try {
+    const dir = path.dirname(settingsPath);
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(settingsPath, JSON.stringify(settings, null, 2));
+    return true;
+  } catch (error) {
+    console.error('Failed to save settings:', error);
+    return false;
+  }
+}
+
 let pdfjsLibPromise = null;
 
 async function getPdfjsLib() {
@@ -62,73 +85,77 @@ function createWindow() {
   });
 }
 
+// IPC handler with error handling
+async function safeIpcHandler(handlerName, handler) {
+  return async (...args) => {
+    try {
+      return await handler(...args);
+    } catch (error) {
+      console.error(`Error in IPC handler ${handlerName}:`, error);
+      throw error;
+    }
+  };
+}
+
 // Original IPC handlers
-ipcMain.handle('pdf:merge', async (_, files) => await mergePDFs(files));
-ipcMain.handle('pdf:split', async (_, file, ranges) => await splitPDF(file, ranges));
-ipcMain.handle('pdf:watermark', async (_, file, text) => await addWatermark(file, text));
+ipcMain.handle('pdf:merge', safeIpcHandler('pdf:merge', (_, files) => mergePDFs(files)));
+ipcMain.handle('pdf:split', safeIpcHandler('pdf:split', (_, file, ranges) => splitPDF(file, ranges)));
+ipcMain.handle('pdf:watermark', safeIpcHandler('pdf:watermark', (_, file, text) => addWatermark(file, text)));
 
 // New editor IPC handlers
-ipcMain.handle('pdf:load', async (_, filePath) => await loadPDF(filePath));
-ipcMain.handle('pdf:applyEdits', async (_, filePath, operations) => await applyEdits(filePath, operations));
+ipcMain.handle('pdf:load', safeIpcHandler('pdf:load', (_, filePath) => loadPDF(filePath)));
+ipcMain.handle('pdf:applyEdits', safeIpcHandler('pdf:applyEdits', (_, filePath, operations) => applyEdits(filePath, operations)));
 
 // File dialog for saving PDF
-ipcMain.handle('file:saveDialog', async (_, defaultPath) => {
+ipcMain.handle('file:saveDialog', safeIpcHandler('file:saveDialog', async (_, defaultPath) => {
   const result = await dialog.showSaveDialog(mainWindow, {
     defaultPath,
     filters: [{ name: 'PDF Files', extensions: ['pdf'] }]
   });
   return result;
-});
+}));
 
 // Write file to disk
-ipcMain.handle('file:write', async (_, filePath, buffer) => {
-  try {
-    await fs.writeFile(filePath, Buffer.from(buffer));
-    return true;
-  } catch (error) {
-    console.error('File write error:', error);
-    if (error.code === 'EPERM' || error.code === 'EBUSY') {
-      throw new Error('无法写入文件。请检查文件是否被其他程序（如 PDF 阅读器）占用，或者您是否有权限写入该位置。');
-    }
-    throw error;
-  }
-});
+ipcMain.handle('file:write', safeIpcHandler('file:write', async (_, filePath, buffer) => {
+  await fs.writeFile(filePath, Buffer.from(buffer));
+  return true;
+}));
 
 // File picker for images
-ipcMain.handle('file:pickImage', async () => {
+ipcMain.handle('file:pickImage', safeIpcHandler('file:pickImage', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     filters: [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png'] }]
   });
   return result;
-});
+}));
 
 // File picker for PDF files
-ipcMain.handle('file:pickPDF', async () => {
+ipcMain.handle('file:pickPDF', safeIpcHandler('file:pickPDF', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     filters: [{ name: 'PDF Files', extensions: ['pdf'] }],
     properties: ['openFile', 'multiSelections']
   });
   return result;
-});
+}));
 
 // Read file for PDF.js
-ipcMain.handle('pdf:readFile', async (_, filePath) => {
+ipcMain.handle('pdf:readFile', safeIpcHandler('pdf:readFile', async (_, filePath) => {
   const data = await fs.readFile(filePath);
   return Array.from(data);
-});
+}));
 
 // Rotate PDF pages
-ipcMain.handle('pdf:rotate', async (_, filePath, pageNumbers, degrees) => {
-  return await rotatePDF(filePath, pageNumbers, degrees);
-});
+ipcMain.handle('pdf:rotate', safeIpcHandler('pdf:rotate', (_, filePath, pageNumbers, degrees) => 
+  rotatePDF(filePath, pageNumbers, degrees)
+));
 
 // Delete PDF pages
-ipcMain.handle('pdf:deletePages', async (_, filePath, pageNumbers) => {
-  return await deletePages(filePath, pageNumbers);
-});
+ipcMain.handle('pdf:deletePages', safeIpcHandler('pdf:deletePages', (_, filePath, pageNumbers) => 
+  deletePages(filePath, pageNumbers)
+));
 
 // Convert PDF page to image - returns raw image data for renderer to process
-ipcMain.handle('pdf:convertToImage', async (_, filePath, pageNum, format, scale) => {
+ipcMain.handle('pdf:convertToImage', safeIpcHandler('pdf:convertToImage', async (_, filePath, pageNum, format, scale) => {
   const pdfjsLib = await getPdfjsLib();
   const fileData = await fs.readFile(filePath);
   const typedArray = new Uint8Array(fileData);
@@ -138,27 +165,31 @@ ipcMain.handle('pdf:convertToImage', async (_, filePath, pageNum, format, scale)
 
   return {
     width: viewport.width,
-    height: viewport.height,
-    pageNum,
-    format,
-    scale
+    height: viewport.height, pageNum, format, scale
   };
-});
+}));
 
 // Protect PDF with password
-ipcMain.handle('pdf:protect', async (_, filePath, userPassword, ownerPassword, permissions) => {
-  return await protectPDF(filePath, userPassword, ownerPassword, permissions);
-});
+ipcMain.handle('pdf:protect', safeIpcHandler('pdf:protect', (_, filePath, userPassword, ownerPassword, permissions) => 
+  protectPDF(filePath, userPassword, ownerPassword, permissions)
+));
 
 // Get PDF bookmarks
-ipcMain.handle('pdf:getBookmarks', async (_, filePath) => {
-  return await getBookmarks(filePath);
-});
+ipcMain.handle('pdf:getBookmarks', safeIpcHandler('pdf:getBookmarks', (_, filePath) => getBookmarks(filePath)));
 
 // Add PDF bookmarks
-ipcMain.handle('pdf:addBookmarks', async (_, filePath, bookmarks) => {
-  return await addBookmarks(filePath, bookmarks);
-});
+ipcMain.handle('pdf:addBookmarks', safeIpcHandler('pdf:addBookmarks', (_, filePath, bookmarks) => 
+  addBookmarks(filePath, bookmarks)
+));
+
+// Settings IPC handlers
+ipcMain.handle('settings:get', safeIpcHandler('settings:get', async () => {
+  return await loadSettings();
+}));
+
+ipcMain.handle('settings:set', safeIpcHandler('settings:set', async (_, settings) => {
+  return await saveSettings(settings);
+}));
 
 app.whenReady().then(() => {
   createWindow();
