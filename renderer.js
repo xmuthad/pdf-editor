@@ -1865,6 +1865,69 @@ async function renderAllPages() {
 
   // Setup canvas event delegation for multi-page editing
   setupMultiPageEditing();
+
+  // Setup resizable sidebar dividers
+  setupResizableDividers();
+}
+
+// Setup resizable sidebar dividers
+function setupResizableDividers() {
+  const leftResizer = document.getElementById('leftResizer');
+  const rightResizer = document.getElementById('rightResizer');
+  const leftSidebar = document.getElementById('leftSidebar');
+  const rightSidebar = document.getElementById('rightSidebar');
+
+  let isResizing = false;
+  let currentResizer = null;
+
+  const minWidth = 180;
+  const maxWidth = 400;
+
+  function startResize(e, resizer, sidebar, isLeft) {
+    isResizing = true;
+    currentResizer = resizer;
+    resizer.classList.add('resizing');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    const startX = e.clientX;
+    const startWidth = sidebar.offsetWidth;
+
+    function onMouseMove(e) {
+      if (!isResizing) return;
+
+      const delta = e.clientX - startX;
+      let newWidth = isLeft ? startWidth + delta : startWidth - delta;
+      newWidth = Math.max(minWidth, Math.min(maxWidth, newWidth));
+      sidebar.style.width = `${newWidth}px`;
+    }
+
+    function onMouseUp() {
+      isResizing = false;
+      currentResizer = null;
+      if (resizer) resizer.classList.remove('resizing');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    }
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  }
+
+  if (leftResizer && leftSidebar) {
+    leftResizer.addEventListener('mousedown', (e) => {
+      startResize(e, leftResizer, leftSidebar, true);
+    });
+  }
+
+  if (rightResizer && rightSidebar) {
+    rightResizer.addEventListener('mousedown', (e) => {
+      startResize(e, rightResizer, rightSidebar, false);
+    });
+  }
 }
 
 // Render a single page canvas

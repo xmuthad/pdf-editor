@@ -274,6 +274,52 @@ body {
 }
 
 /* ============================
+   Resizable Dividers
+   ============================ */
+.resizer {
+  width: 6px;
+  background: transparent;
+  cursor: col-resize;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 10;
+  transition: background-color 0.2s;
+}
+
+.resizer:hover,
+.resizer.resizing {
+  background: var(--primary-color);
+}
+
+.resizer-left {
+  cursor: w-resize;
+}
+
+.resizer-right {
+  cursor: e-resize;
+}
+
+.resizer::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 2px;
+  height: 40px;
+  background: var(--border-color);
+  border-radius: 1px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.resizer:hover::after,
+.resizer.resizing::after {
+  opacity: 1;
+  background: white;
+}
+
+/* ============================
    Left Sidebar - Thumbnails
    ============================ */
 .sidebar-left {
