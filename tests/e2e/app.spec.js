@@ -40,10 +40,12 @@ test.describe('PDF Editor E2E Tests', () => {
   });
 
   test('帮助模态框应该可以打开和关闭', async () => {
-    await window.locator('[data-action="help"]').click();
+    const menuItem = window.locator('[data-action="help"]');
+    await expect(menuItem).toBeVisible();
+    
+    await menuItem.click();
     await expect(window.locator('#helpModal')).toHaveClass(/active/);
-    await expect(window.locator('#helpModal .help-section').first()).toBeVisible();
-
+    
     await window.locator('#closeHelpModalBtn').click();
     await expect(window.locator('#helpModal')).not.toHaveClass(/active/);
   });

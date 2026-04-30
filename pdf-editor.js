@@ -972,7 +972,7 @@ class PDFEditor {
 
     updateTextDebugPanel(`点击(${this.startX.toFixed(0)}, ${this.startY.toFixed(0)}) isDrawing=${this.isDrawing} | 前3项: ${itemsDebug}`);
 
-    if (this.currentTool === 'text') {
+    if (this.currentTool === 'text' || this.currentTool === null) {
       const items = this.getTextItemsAtPosition(
         this.startX,
         this.startY,

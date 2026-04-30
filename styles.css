@@ -63,6 +63,8 @@ body {
 .menu-items {
   display: flex;
   gap: 4px;
+  -webkit-app-region: no-drag;
+  pointer-events: auto;
 }
 
 .menu-item {
@@ -72,6 +74,10 @@ body {
   transition: background 0.15s;
   color: var(--text-secondary);
   font-size: 12px;
+  -webkit-app-region: no-drag;
+  pointer-events: auto;
+  position: relative;
+  z-index: 100;
 }
 
 .menu-item:hover {
@@ -104,6 +110,7 @@ body {
   font-size: 16px;
   color: var(--text-secondary);
   transition: all 0.15s;
+  -webkit-app-region: no-drag;
 }
 
 .window-btn:hover {

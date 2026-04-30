@@ -408,7 +408,9 @@ function initEventListeners() {
     }
   }
 
-  function handleMenuAction(action) {
+  // 将菜单处理函数暴露到全局，以便测试可以调用
+  window.handleMenuAction = function(action) {
+    console.log('handleMenuAction 被调用，action:', action);
     switch (action) {
       case 'file':
         openPdfDialog().catch(handleError);
@@ -435,7 +437,7 @@ function initEventListeners() {
       default:
         break;
     }
-  }
+  };
 
   // Settings Modal
   function openSettingsModal() {
@@ -488,19 +490,19 @@ function initEventListeners() {
   }
 
   // Help Modal
-  function openHelpModal() {
+  window.openHelpModal = function() {
     const modal = document.getElementById('helpModal');
     if (modal) {
       modal.classList.add('active');
     }
-  }
+  };
 
-  function closeHelpModal() {
+  window.closeHelpModal = function() {
     const modal = document.getElementById('helpModal');
     if (modal) {
       modal.classList.remove('active');
     }
-  }
+  };
 
   // Help modal event listeners
   const closeHelpModalBtn = document.getElementById('closeHelpModalBtn');
@@ -523,9 +525,26 @@ function initEventListeners() {
     });
   }
 
-  document.querySelectorAll('.menu-item').forEach(item => {
-    item.addEventListener('click', () => {
-      handleMenuAction(item.dataset.action);
+  // 绑定菜单事件 - 更直接的方式
+  const menuItems = document.querySelectorAll('.menu-item');
+  console.log('找到菜单项数量:', menuItems.length);
+  
+  menuItems.forEach((item, index) => {
+    const action = item.getAttribute('data-action');
+    console.log(`绑定菜单 ${index}:`, action, item);
+    
+    item.style.pointerEvents = 'auto';
+    item.addEventListener('mousedown', (e) => {
+      console.log(`菜单mousedown: ${action}`);
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    
+    item.addEventListener('click', (e) => {
+      console.log(`菜单被点击: ${action}`);
+      e.preventDefault();
+      e.stopPropagation();
+      handleMenuAction(action);
     });
   });
 
@@ -1742,19 +1761,19 @@ function handlePageMouseDown(e, pageNum) {
     }
   }
 
-  // Load text content for this page if using text tool
-  if (currentTool === 'text') {
+  // Load text content for this page if using text tool or select tool
+  if (currentTool === 'text' || currentTool === 'select') {
     const cacheKey = `page_${pageNum}`;
     const isCached = pdfEditor.textItemsCache && pdfEditor.textItemsCache.has(cacheKey);
 
-    updateTextDebugPanel(`text工具点击 | isCached=${isCached} | textItems=${pdfEditor.textItems ? pdfEditor.textItems.length : 0}`);
+    updateTextDebugPanel(`text/select工具点击 | isCached=${isCached} | textItems=${pdfEditor.textItems ? pdfEditor.textItems.length : 0}`);
 
     if (isCached) {
       // Text already cached - handle click synchronously for instant response
       pdfEditor.textItems = pdfEditor.textItemsCache.get(cacheKey);
       const textStatus = pdfEditor.getTextStatus();
       if (textStatus.status === 'editable') {
-        updatePdfStatus('editable', `${textStatus.itemCount} 个文本项`);
+        updatePdfStatus('editable', textStatus.itemCount + ' 个文本项');
       } else if (textStatus.status === 'empty') {
         updatePdfStatus('scanned', '此页面无文本内容');
       } else if (textStatus.status === 'error') {
@@ -1768,7 +1787,8 @@ function handlePageMouseDown(e, pageNum) {
         const textStatus = pdfEditor.getTextStatus();
         updateTextDebugPanel(`文本加载完成 | items=${textStatus.itemCount} | status=${textStatus.status}`);
         if (textStatus.status === 'editable') {
-          updatePdfStatus('editable', `${textStatus.itemCount} 个文本项`);
+          var itemCount = textStatus.itemCount;
+          updatePdfStatus('editable', itemCount + ' 个文本项');
         } else if (textStatus.status === 'empty') {
           updatePdfStatus('scanned', '此页面无文本内容');
         } else if (textStatus.status === 'error') {
@@ -1848,6 +1868,23 @@ async function initEditor() {
 
     // Render all pages for continuous scroll view
     await renderAllPages();
+
+    // Pre-load text content for the first page so user can select text immediately
+    if (pdfEditor) {
+      try {
+        pdfEditor.currentPage = 1;
+        await pdfEditor.loadTextForPage(1);
+        const textStatus = pdfEditor.getTextStatus();
+        if (textStatus.status === 'editable') {
+          var cnt = textStatus.itemCount; updatePdfStatus("editable", cnt + " 个文本项");
+        } else if (textStatus.status === 'empty') {
+          updatePdfStatus('scanned', '此页面无文本内容');
+        }
+        updateTextDebugPanel('第一页文本已预加载 | items=' + textStatus.itemCount);
+      } catch (err) {
+        console.warn('预加载文本失败:', err);
+      }
+    }
 
     // Show editor UI
     if (toolProperties) toolProperties.style.display = 'block';
@@ -1933,7 +1970,7 @@ function startBackgroundPageLoading() {
 
       // Limit total preloaded pages for large PDFs
       if (loadedPages.size >= MAX_PRELOAD_PAGES) {
-        if (DEBUG_MODE) console.log(`[BACKGROUND] Reached preload limit: ${MAX_PRELOAD_PAGES}`);
+        if (DEBUG_MODE) console.log('[BACKGROUND] Reached preload limit: ' + MAX_PRELOAD_PAGES);
         return;
       }
 
@@ -1947,20 +1984,20 @@ function startBackgroundPageLoading() {
         }
 
         try {
-          const cacheKey = `${currentPdfPath}_${pageNum}`;
+          const cacheKey = currentPdfPath + '_' + pageNum;
           if (!pdfPageCache.has(cacheKey)) {
             const lib = await initPDFJS();
             const pdf = pdfDocumentCache.get(currentPdfPath);
             if (pdf) {
               await pdf.getPage(pageNum);
               loadedPages.add(pageNum);
-              if (DEBUG_MODE) console.log(`[BACKGROUND] Loaded page ${pageNum}`);
+              if (DEBUG_MODE) console.log('[BACKGROUND] Loaded page ' + pageNum);
             }
           } else {
             loadedPages.add(pageNum);
           }
         } catch (error) {
-          if (DEBUG_MODE) console.log(`[BACKGROUND] Failed to load page ${pageNum}:`, error.message);
+          if (DEBUG_MODE) console.log('[BACKGROUND] Failed to load page ' + pageNum + ':', error.message);
         }
 
         // Wait between pages to keep UI responsive
@@ -1984,7 +2021,7 @@ async function scrollToPage(pageNum) {
   updatePageInfo();
 
   // Scroll to the page
-  const pageElement = pagesContainer.querySelector(`[data-page="${pageNum}"]`);
+  const pageElement = pagesContainer.querySelector('[data-page="' + pageNum + '"]');
   if (pageElement) {
     pageElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
@@ -2631,7 +2668,14 @@ function updatePdfStatus(status, details) {
 
 // Initialize on load
 document.addEventListener('DOMContentLoaded', async () => {
-  initEventListeners();
+  console.log('DOM已加载，开始初始化事件...');
+  
+  // 给一个小的延迟确保DOM完全渲染
+  setTimeout(() => {
+    console.log('延迟后绑定菜单事件');
+    initEventListeners();
+  }, 100);
+  
   updateStatus('准备就绪');
 
   // Load settings and auto-open last file if enabled
