@@ -434,6 +434,77 @@ body {
   display: block;
 }
 
+/* Outline (Table of Contents) */
+.outline-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 12px;
+}
+
+.outline-list {
+  flex: 1;
+  overflow-y: auto;
+  margin-bottom: 12px;
+}
+
+.outline-empty {
+  text-align: center;
+  color: var(--text-secondary);
+  padding: 40px 20px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.outline-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: var(--bg-medium);
+  border-radius: 6px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.outline-item:hover {
+  background: var(--bg-hover);
+}
+
+.outline-item-child {
+  background: var(--bg-dark);
+  margin-left: 8px;
+}
+
+.outline-title {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.outline-page {
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: var(--bg-dark);
+  padding: 2px 8px;
+  border-radius: 10px;
+  margin-left: 8px;
+  flex-shrink: 0;
+}
+
+.outline-count {
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-align: center;
+  padding: 8px;
+  background: var(--bg-dark);
+  border-radius: 4px;
+}
+
 /* Bookmarks */
 .bookmarks-container {
   display: flex;

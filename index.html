@@ -172,6 +172,7 @@
         <div class="sidebar-header">
           <div class="sidebar-tabs">
             <button class="sidebar-tab active" data-tab="pages">页面</button>
+            <button class="sidebar-tab" data-tab="outline">目录</button>
             <button class="sidebar-tab" data-tab="bookmarks">书签</button>
           </div>
           <button class="sidebar-toggle" id="leftSidebarToggle">▶</button>
@@ -187,7 +188,14 @@
             <div class="thumbnail-list" id="thumbnailList" style="display: none;"></div>
           </div>
         </div>
-        <!-- Bookmarks Tab -->
+        <!-- Outline Tab (PDF Table of Contents) -->
+        <div class="tab-content" id="outlineTab">
+          <div class="outline-container" id="outlineContainer">
+            <div class="outline-list" id="outlineList"></div>
+            <div class="outline-info" id="outlineInfo"></div>
+          </div>
+        </div>
+        <!-- Bookmarks Tab (User Bookmarks) -->
         <div class="tab-content" id="bookmarksTab">
           <div class="bookmarks-container" id="bookmarksContainer">
             <div class="bookmarks-list" id="bookmarksList"></div>

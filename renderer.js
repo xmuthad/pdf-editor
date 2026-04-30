@@ -949,6 +949,65 @@ function initEventListeners() {
 let currentBookmarks = [];
 let editingBookmarkIndex = -1;
 
+// Outline (TOC) state
+let currentOutline = [];
+let hasOutline = false;
+
+// Outline functions
+async function loadOutline() {
+  if (!currentPdfPath) return;
+
+  try {
+    const outline = await window.pdfAPI.getBookmarks(currentPdfPath);
+    currentOutline = outline || [];
+    hasOutline = currentOutline.length > 0;
+    renderOutline();
+  } catch (error) {
+    console.error('Failed to load outline:', error);
+    currentOutline = [];
+    hasOutline = false;
+    renderOutline();
+  }
+}
+
+function renderOutline() {
+  const outlineList = document.getElementById('outlineList');
+  const outlineInfo = document.getElementById('outlineInfo');
+
+  if (!outlineList) return;
+
+  if (currentOutline.length === 0) {
+    outlineList.innerHTML = '<div class="outline-empty">此 PDF 没有目录大纲<br>请使用书签功能手动添加</div>';
+    if (outlineInfo) {
+      outlineInfo.innerHTML = '';
+    }
+    return;
+  }
+
+  outlineList.innerHTML = currentOutline.map((item, index) => `
+    <div class="outline-item ${item.level > 0 ? 'outline-item-child' : ''}"
+         data-index="${index}"
+         style="padding-left: ${12 + (item.level || 0) * 16}px">
+      <span class="outline-title">${escapeHtml(item.title)}</span>
+      <span class="outline-page">第 ${item.page} 页</span>
+    </div>
+  `).join('');
+
+  if (outlineInfo) {
+    outlineInfo.innerHTML = `<div class="outline-count">共 ${currentOutline.length} 个条目</div>`;
+  }
+
+  outlineList.querySelectorAll('.outline-item').forEach(item => {
+    item.addEventListener('click', (e) => {
+      const index = parseInt(item.dataset.index);
+      const outlineItem = currentOutline[index];
+      if (outlineItem && outlineItem.page) {
+        goToPage(outlineItem.page);
+      }
+    });
+  });
+}
+
 // Bookmark functions
 async function loadBookmarks() {
     if (!currentPdfPath) return;
@@ -1514,7 +1573,8 @@ async function handleSelectedFiles(files) {
     // Initialize editor
     await initEditor();
 
-    // Load bookmarks for the new PDF
+    // Load outline and bookmarks for the new PDF
+    await loadOutline();
     await loadBookmarks();
 
     updateStatus('文件已加载，选择工具开始编辑');
