@@ -1637,6 +1637,42 @@ textarea.form-input {
 }
 
 /* ============================
+   Text Layer for Selection
+   ============================ */
+.text-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 2;
+  pointer-events: auto;
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+
+.text-layer-span {
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  user-select: text;
+  -webkit-user-select: text;
+  pointer-events: auto;
+  color: transparent;
+}
+
+.text-layer-span::selection {
+  background: rgba(20, 115, 230, 0.3);
+  color: transparent;
+}
+
+.text-layer-span::-moz-selection {
+  background: rgba(20, 115, 230, 0.3);
+  color: transparent;
+}
+
+/* ============================
    Text Edit Box
    ============================ */
 .text-edit-box {

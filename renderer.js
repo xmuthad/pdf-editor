@@ -1820,6 +1820,11 @@ async function renderPageCanvas(pageNum) {
   canvas.className = 'page-canvas';
   canvas.id = `pdfCanvas_${pageNum}`;
 
+  // Create text layer for text selection
+  const textLayer = document.createElement('div');
+  textLayer.className = 'text-layer';
+  textLayer.id = `textLayer_${pageNum}`;
+
   const editOverlay = document.createElement('div');
   editOverlay.className = 'page-edit-overlay';
   editOverlay.id = `editOverlay_${pageNum}`;
@@ -1829,6 +1834,7 @@ async function renderPageCanvas(pageNum) {
   pageNumber.textContent = `第 ${pageNum} 页`;
 
   canvasContainer.appendChild(canvas);
+  canvasContainer.appendChild(textLayer);
   canvasContainer.appendChild(editOverlay);
   pageWrapper.appendChild(canvasContainer);
   pageWrapper.appendChild(pageNumber);
@@ -1845,6 +1851,9 @@ async function renderPageCanvas(pageNum) {
   // Set container size based on CSS dimensions from pageInfo
   canvasContainer.style.width = `${pageInfo.width}px`;
   canvasContainer.style.height = `${pageInfo.height}px`;
+
+  // Render text layer for text selection
+  await renderTextLayer(pageNum, canvas, textLayer);
 
   // Cache background for this page (for smooth editing)
   const ctx = canvas.getContext('2d', { alpha: false });
@@ -1865,6 +1874,88 @@ async function renderPageCanvas(pageNum) {
   }
 }
 
+// Render text layer for text selection
+async function renderTextLayer(pageNum, canvas, textLayer) {
+  try {
+    const lib = await initPDFJS();
+    const fileData = await getCachedFileData(currentPdfPath);
+    const typedArray = new Uint8Array(fileData);
+
+    let pdf = pdfDocumentCache.get(currentPdfPath);
+    if (!pdf) {
+      pdf = await lib.getDocument({
+        data: typedArray,
+        workerSrc: window.pdfWorkerSrc,
+        disableFontFace: true,
+        disableRange: true,
+        disableStream: true,
+        disableAutoFetch: true
+      }).promise;
+      pdfDocumentCache.set(currentPdfPath, pdf);
+    }
+
+    const page = await pdf.getPage(pageNum);
+    const scale = pdfEditor ? pdfEditor.scale : 1.0;
+    const viewport = page.getViewport({ scale });
+
+    // Get text content
+    const textContent = await page.getTextContent();
+
+    // Set text layer size to match viewport
+    textLayer.style.width = `${viewport.width}px`;
+    textLayer.style.height = `${viewport.height}px`;
+
+    // Clear existing content
+    textLayer.innerHTML = '';
+
+    // Create text spans for each text item
+    textContent.items.forEach((item, index) => {
+      const tx = item.transform;
+      const fontSize = Math.sqrt(tx[0] * tx[0] + tx[1] * tx[1]);
+      const rotation = Math.atan2(tx[1], tx[0]) * (180 / Math.PI);
+
+      const span = document.createElement('span');
+      span.textContent = item.str;
+      span.className = 'text-layer-span';
+
+      // Position the text span
+      const x = tx[4];
+      const y = viewport.height - tx[5];
+
+      span.style.cssText = `
+        position: absolute;
+        left: ${x}px;
+        top: ${y - fontSize}px;
+        font-size: ${fontSize}px;
+        font-family: ${item.fontName || 'sans-serif'};
+        transform: rotate(${rotation}deg);
+        transform-origin: left bottom;
+        white-space: pre;
+        cursor: text;
+        user-select: text;
+        -webkit-user-select: text;
+        color: transparent;
+        pointer-events: auto;
+      `;
+
+      textLayer.appendChild(span);
+    });
+
+    // Add copy event listener to text layer
+    textLayer.addEventListener('copy', (e) => {
+      const selection = window.getSelection();
+      if (selection && selection.toString()) {
+        e.clipboardData.setData('text/plain', selection.toString());
+        e.preventDefault();
+        updateStatus('文本已复制到剪贴板');
+      }
+    });
+
+  } catch (error) {
+    console.error(`Failed to render text layer for page ${pageNum}:`, error);
+  }
+}
+
 // Setup multi-page editing support
 function setupMultiPageEditing() {
   if (!pdfEditor) return;
@@ -1879,6 +1970,30 @@ function setupMultiPageEditing() {
     canvas.addEventListener('mousemove', (e) => handlePageMouseMove(e, pageNum));
     canvas.addEventListener('mouseup', (e) => handlePageMouseUp(e, pageNum));
     canvas.addEventListener('mouseleave', (e) => handlePageMouseLeave(e, pageNum));
+  });
+
+  // Setup text layer event handling - allow text selection without interfering with editing
+  document.querySelectorAll('.text-layer').forEach((textLayer) => {
+    const pageNum = parseInt(textLayer.id.split('_')[1]);
+
+    // Allow text selection but prevent interference with canvas editing
+    textLayer.addEventListener('mousedown', (e) => {
+      // If using text or select tool, let the text layer handle selection
+      if (currentTool === 'text' || currentTool === 'select') {
+        // Don't prevent default - allow text selection
+        // But stop propagation to prevent canvas mousedown
+        if (e.target.classList.contains('text-layer-span')) {
+          e.stopPropagation();
+        }
+      }
+    });
+
+    // Handle double-click to select word
+    textLayer.addEventListener('dblclick', (e) => {
+      if (currentTool === 'text' || currentTool === 'select') {
+        e.stopPropagation();
+      }
+    });
   });
 }
 
@@ -2305,12 +2420,21 @@ function setZoom(level) {
 
   updateStatus(`缩放：${currentZoom}%`);
 
-  // Re-render at higher resolution if zoom > 100%
+  // Update pdfEditor scale
   if (pdfEditor) {
-    // Always update pdfEditor.scale to stay in sync with currentZoom
-    // This ensures text tool hit detection works correctly at all zoom levels
     pdfEditor.scale = currentZoom / 100;
 
+    // Re-render text layers at new scale
+    document.querySelectorAll('.page-canvas-wrapper').forEach((pageWrapper) => {
+      const pageNum = parseInt(pageWrapper.dataset.page);
+      const canvas = pageWrapper.querySelector('.page-canvas');
+      const textLayer = pageWrapper.querySelector('.text-layer');
+      if (canvas && textLayer) {
+        renderTextLayer(pageNum, canvas, textLayer);
+      }
+    });
+
+    // Re-render at higher resolution if zoom > 100%
     if (currentZoom > 100) {
       // Debounce re-render to avoid rapid re-renders during zoom
       if (window.zoomRenderTimeout) {
