@@ -86,7 +86,7 @@ function createWindow() {
 }
 
 // IPC handler with error handling
-async function safeIpcHandler(handlerName, handler) {
+function safeIpcHandler(handlerName, handler) {
   return async (...args) => {
     try {
       return await handler(...args);
