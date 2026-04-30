@@ -445,7 +445,27 @@ body {
 .outline-list {
   flex: 1;
   overflow-y: auto;
+  overflow-x: auto;
   margin-bottom: 12px;
+  min-width: 0;
+}
+
+.outline-list::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.outline-list::-webkit-scrollbar-track {
+  background: var(--bg-dark);
+}
+
+.outline-list::-webkit-scrollbar-thumb {
+  background: var(--bg-light);
+  border-radius: 3px;
+}
+
+.outline-list::-webkit-scrollbar-thumb:hover {
+  background: var(--border-color);
 }
 
 .outline-empty {

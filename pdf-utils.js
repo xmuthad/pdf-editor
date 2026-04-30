@@ -436,13 +436,55 @@ async function getBookmarks(filePath) {
     if (!bookmark || typeof bookmark.get !== 'function') return null;
 
     const title = bookmark.get(PDFName.of('Title'));
-    const dest = bookmark.get(PDFName.of('Dest'));
+    let dest = bookmark.get(PDFName.of('Dest'));
 
     let pageNum = null;
     let pageIndex = null;
 
-    if (dest && Array.isArray(dest)) {
-      const pageRef = dest[0];
+    // Handle Dests - named destinations
+    if (!dest) {
+      const destsName = bookmark.get(PDFName.of('Dests'));
+      if (destsName) {
+        const names = catalog.get(PDFName.of('Names'));
+        if (names) {
+          const dests = names.get(PDFName.of('Dests'));
+          if (dests) {
+            // Look up the named destination
+            // This is simplified - full implementation would need to parse the name tree
+          }
+        }
+      }
+    }
+
+    // Handle GoTo action
+    if (!dest) {
+      const a = bookmark.get(PDFName.of('A'));
+      if (a && typeof a.get === 'function') {
+        const s = a.get(PDFName.of('S'));
+        if (s && s.toString() === '/GoTo') {
+          dest = a.get(PDFName.of('D'));
+        }
+      }
+    }
+
+    if (dest) {
+      let pageRef = null;
+
+      if (Array.isArray(dest)) {
+        pageRef = dest[0];
+      } else if (typeof dest === 'object' && dest !== null) {
+        // Named destination - try to resolve it
+        const destName = dest.toString();
+        // Try to get from catalog's Dests
+        const dests = catalog.get(PDFName.of('Dests'));
+        if (dests && typeof dests.get === 'function') {
+          const namedDest = dests.get(destName);
+          if (namedDest && Array.isArray(namedDest)) {
+            pageRef = namedDest[0];
+          }
+        }
+      }
+
       if (pageRef && typeof pageRef === 'object' && 'gen' in pageRef) {
         try {
           const pageIndex_ = pdfDoc.getPageIndex(pageRef);

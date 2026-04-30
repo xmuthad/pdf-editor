@@ -988,8 +988,8 @@ function renderOutline() {
     <div class="outline-item ${item.level > 0 ? 'outline-item-child' : ''}"
          data-index="${index}"
          style="padding-left: ${12 + (item.level || 0) * 16}px">
-      <span class="outline-title">${escapeHtml(item.title)}</span>
-      <span class="outline-page">第 ${item.page} 页</span>
+      <span class="outline-title" title="${escapeHtml(item.title)}">${escapeHtml(item.title)}</span>
+      <span class="outline-page">${item.page ? `第 ${item.page} 页` : '-'}</span>
     </div>
   `).join('');
 
