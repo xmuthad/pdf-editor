@@ -97,6 +97,40 @@ let appSettings = {
   lastFilePath: ''
 };
 
+// Generic Modal Controller Factory
+function createModalController(modalId) {
+  const modal = document.getElementById(modalId);
+  if (!modal) {
+    console.warn('Modal not found:', modalId);
+    return null;
+  }
+  
+  return {
+    open: function() {
+      modal.classList.add('active');
+    },
+    close: function() {
+      modal.classList.remove('active');
+    },
+    isOpen: function() {
+      return modal.classList.contains('active');
+    },
+    element: modal
+  };
+}
+
+// Initialize all modals
+const modals = {
+  help: createModalController('helpModal'),
+  settings: createModalController('settingsModal'),
+  shortcuts: createModalController('shortcutsModal'),
+  about: createModalController('aboutModal'),
+  merge: createModalController('mergeModal'),
+  split: createModalController('splitModal'),
+  watermark: createModalController('watermarkModal'),
+  bookmark: createModalController('bookmarkModal')
+};
+
 // Load settings from disk
 async function loadAppSettings() {
   try {
@@ -409,33 +443,63 @@ function initEventListeners() {
   }
 
   // 将菜单处理函数暴露到全局，以便测试可以调用
+  // Menu action handlers - using object mapping for cleaner code
+  const menuHandlers = {
+    // File menu (container only)
+    'file': () => {}, // do nothing, it's a container
+    'new': handleNewFile,
+    'open': () => openPdfDialog().catch(handleError),
+    'save': handleSavePDF,
+    'saveAs': handleSaveAs,
+    'close': handleCloseFile,
+
+    // Edit menu (container only)
+    'edit': () => {}, // do nothing, it's a container
+    'undo': handleUndo,
+    'redo': handleRedo,
+
+    // View menu (container only)
+    'view': () => {}, // do nothing, it's a container
+    'zoomIn': handleZoomIn,
+    'zoomOut': handleZoomOut,
+    'zoomReset': handleZoomReset,
+    'toggleLeftSidebar': toggleLeftSidebar,
+    'toggleRightSidebar': toggleRightSidebar,
+    'fullscreen': toggleFullscreen,
+
+    // Tools menu (container only)
+    'tools': () => {}, // do nothing, it's a container
+    'selectTool': () => selectTool('select'),
+    'textTool': () => selectTool('text'),
+    'highlightTool': () => selectTool('highlight'),
+    'underlineTool': () => selectTool('underline'),
+    'eraserTool': () => selectTool('eraser'),
+    'openMergeModal': openMergeModal,
+    'openSplitModal': openSplitModal,
+    'openWatermarkModal': openWatermarkModal,
+
+    // Settings menu (container only)
+    'settings': () => {}, // do nothing, it's a container
+    'openSettingsModal': openSettingsModal,
+    'toggleAutoOpen': () => {
+      appSettings.openLastFile = !appSettings.openLastFile;
+      saveAppSettings();
+      updateStatus(appSettings.openLastFile ? '已启用自动打开上次文件' : '已禁用自动打开上次文件');
+    },
+
+    // Help menu (container only)
+    'help': () => {}, // do nothing, it's a container
+    'showShortcuts': showShortcutsModal,
+    'about': showAboutModal
+  };
+
   window.handleMenuAction = function(action) {
     console.log('handleMenuAction 被调用，action:', action);
-    switch (action) {
-      case 'file':
-        openPdfDialog().catch(handleError);
-        break;
-      case 'edit':
-        handleUndo();
-        break;
-      case 'view':
-        const leftSidebar = document.getElementById('leftSidebar');
-        const rightSidebar = document.getElementById('rightSidebar');
-        if (leftSidebar) leftSidebar.classList.toggle('collapsed');
-        if (rightSidebar) rightSidebar.classList.toggle('collapsed');
-        updateStatus('已切换侧边栏');
-        break;
-      case 'tools':
-        selectTool('select');
-        break;
-      case 'settings':
-        openSettingsModal();
-        break;
-      case 'help':
-        openHelpModal();
-        break;
-      default:
-        break;
+    const handler = menuHandlers[action];
+    if (handler) {
+      handler();
+    } else {
+      console.warn('Unknown menu action:', action);
     }
   };
 
@@ -491,17 +555,11 @@ function initEventListeners() {
 
   // Help Modal
   window.openHelpModal = function() {
-    const modal = document.getElementById('helpModal');
-    if (modal) {
-      modal.classList.add('active');
-    }
+    if (modals.help) modals.help.open();
   };
 
   window.closeHelpModal = function() {
-    const modal = document.getElementById('helpModal');
-    if (modal) {
-      modal.classList.remove('active');
-    }
+    if (modals.help) modals.help.close();
   };
 
   // Help modal event listeners
@@ -525,25 +583,101 @@ function initEventListeners() {
     });
   }
 
+  // Shortcuts Modal functions
+  function showShortcutsModal() {
+    if (modals.shortcuts) modals.shortcuts.open();
+  }
+
+  function closeShortcutsModal() {
+    if (modals.shortcuts) modals.shortcuts.close();
+  }
+
+  // Shortcuts modal event listeners
+  const closeShortcutsModalBtn = document.getElementById('closeShortcutsModalBtn');
+  if (closeShortcutsModalBtn) {
+    closeShortcutsModalBtn.addEventListener('click', closeShortcutsModal);
+  }
+
+  const closeShortcutsModalX = document.getElementById('closeShortcutsModal');
+  if (closeShortcutsModalX) {
+    closeShortcutsModalX.addEventListener('click', closeShortcutsModal);
+  }
+
+  const shortcutsModalOverlay = document.getElementById('shortcutsModal');
+  if (shortcutsModalOverlay) {
+    shortcutsModalOverlay.addEventListener('click', (e) => {
+      if (e.target === shortcutsModalOverlay) {
+        closeShortcutsModal();
+      }
+    });
+  }
+
+  // About Modal functions
+  function showAboutModal() {
+    if (modals.about) modals.about.open();
+  }
+
+  function closeAboutModal() {
+    if (modals.about) modals.about.close();
+  }
+
+  // About modal event listeners
+  const closeAboutModalBtn = document.getElementById('closeAboutModalBtn');
+  if (closeAboutModalBtn) {
+    closeAboutModalBtn.addEventListener('click', closeAboutModal);
+  }
+
+  const closeAboutModalX = document.getElementById('closeAboutModal');
+  if (closeAboutModalX) {
+    closeAboutModalX.addEventListener('click', closeAboutModal);
+  }
+
+  const aboutModalOverlay = document.getElementById('aboutModal');
+  if (aboutModalOverlay) {
+    aboutModalOverlay.addEventListener('click', (e) => {
+      if (e.target === aboutModalOverlay) {
+        closeAboutModal();
+      }
+    });
+  }
+
   // 绑定菜单事件 - 更直接的方式
   const menuItems = document.querySelectorAll('.menu-item');
   console.log('找到菜单项数量:', menuItems.length);
   
   menuItems.forEach((item, index) => {
     const action = item.getAttribute('data-action');
-    console.log(`绑定菜单 ${index}:`, action, item);
+    console.log('绑定菜单 ' + index + ':', action, item);
     
     item.style.pointerEvents = 'auto';
     item.addEventListener('mousedown', (e) => {
-      console.log(`菜单mousedown: ${action}`);
+      console.log('菜单 mousedown: ' + action);
       e.preventDefault();
       e.stopPropagation();
     });
     
     item.addEventListener('click', (e) => {
-      console.log(`菜单被点击: ${action}`);
+      console.log('菜单被点击: ' + action);
       e.preventDefault();
       e.stopPropagation();
+      handleMenuAction(action);
+    });
+  });
+  
+  // Bind submenu items (undo, redo)
+  const submenuItems = document.querySelectorAll('.submenu-item');
+  submenuItems.forEach(item => {
+    item.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const action = item.getAttribute('data-action');
+      console.log('子菜单被点击: ' + action);
+      
+      // Close all submenus after click
+      document.querySelectorAll('.submenu').forEach(submenu => {
+        submenu.style.display = 'none';
+      });
+      
       handleMenuAction(action);
     });
   });
@@ -709,6 +843,27 @@ function initEventListeners() {
     // Save
     if ((e.ctrlKey || e.metaKey) && e.key === 's') {
       handleSavePDF();
+      e.preventDefault();
+    }
+    
+    // Tool shortcuts (single key without modifiers)
+    const toolShortcuts = {
+      'v': 'select',
+      't': 'text',
+      'h': 'highlight',
+      'u': 'underline',
+      'e': 'eraser'
+    };
+    
+    const tool = toolShortcuts[e.key.toLowerCase()];
+    if (tool && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      selectTool(tool);
+      e.preventDefault();
+    }
+    
+    // Fullscreen
+    if (e.key === 'F11') {
+      toggleFullscreen();
       e.preventDefault();
     }
   });
@@ -2177,6 +2332,8 @@ function setZoom(level) {
 function updateUndoRedoUI(status) {
   const undoBtns = [document.getElementById('undoBtn'), document.getElementById('undoToolbarBtn')];
   const redoBtns = [document.getElementById('redoBtn'), document.getElementById('redoToolbarBtn')];
+  const undoMenuItem = document.querySelector('.submenu-item[data-action="undo"]');
+  const redoMenuItem = document.querySelector('.submenu-item[data-action="redo"]');
 
   undoBtns.forEach(btn => {
     if (btn) {
@@ -2191,6 +2348,14 @@ function updateUndoRedoUI(status) {
       btn.classList.toggle('disabled', !status.canRedo);
     }
   });
+
+  // Update menu submenu items
+  if (undoMenuItem) {
+    undoMenuItem.classList.toggle('disabled', !status.canUndo);
+  }
+  if (redoMenuItem) {
+    redoMenuItem.classList.toggle('disabled', !status.canRedo);
+  }
 }
 
 // Handle undo
@@ -2261,6 +2426,132 @@ async function handleSavePDF() {
 // Operation handlers
 async function handleMerge() {
   openMergeModal();
+}
+
+// Handle new file - close current and prompt to open new
+async function handleNewFile() {
+  if (pdfEditor && currentPdfPath) {
+    const operations = pdfEditor.getOperations();
+    if (operations.length > 0) {
+      if (!confirm('当前有未保存的编辑，确定要关闭吗？')) {
+        return;
+      }
+    }
+  }
+  
+  if (pdfEditor) {
+    pdfEditor.cleanup();
+  }
+  currentPdfPath = null;
+  selectedFiles = [];
+  totalPages = 0;
+  currentPage = 1;
+  
+  const pagesContainer = document.getElementById('pagesContainer');
+  if (pagesContainer) pagesContainer.innerHTML = '';
+  const thumbnailList = document.getElementById('thumbnailList');
+  if (thumbnailList) {
+    thumbnailList.innerHTML = '';
+    thumbnailList.style.display = 'none';
+  }
+  
+  const welcomePanel = document.getElementById('welcomePanel');
+  if (welcomePanel) welcomePanel.style.display = 'flex';
+  
+  updateStatus('准备就绪');
+}
+
+// Handle save as - save to new location
+async function handleSaveAs() {
+  try {
+    if (!pdfEditor) return;
+
+    const operations = pdfEditor.getOperations();
+    if (operations.length === 0) {
+      updateStatus('没有可保存的编辑');
+      return;
+    }
+
+    updateStatus('正在应用编辑...');
+
+    const modifiedBuffer = await pdfEditor.applyToPDF(currentPdfPath);
+
+    if (window.pdfAPI) {
+      const defaultName = currentPdfPath ? currentPdfPath.split(/[\\/]/).pop().replace('.pdf', '_edited.pdf') : 'edited.pdf';
+      const result = await window.pdfAPI.saveDialog(defaultName);
+      if (!result.canceled && result.filePath) {
+        await window.pdfAPI.writeFile(result.filePath, modifiedBuffer);
+        updateStatus('另存成功：' + result.filePath);
+      }
+    } else {
+      const blob = new Blob([modifiedBuffer], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'edited.pdf';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      updateStatus('另存成功');
+    }
+  } catch (error) {
+    handleError(error);
+  }
+}
+
+// Handle close file
+async function handleCloseFile() {
+  await handleNewFile();
+}
+
+// View control functions
+function handleZoomIn() {
+  const zoomInBtn = document.getElementById('zoomInBtn');
+  if (zoomInBtn) zoomInBtn.click();
+}
+
+function handleZoomOut() {
+  const zoomOutBtn = document.getElementById('zoomOutBtn');
+  if (zoomOutBtn) zoomOutBtn.click();
+}
+
+function handleZoomReset() {
+  currentZoom = 100;
+  updateZoomUI();
+  if (pdfEditor) {
+    pdfEditor.scale = 1.0;
+    renderAllPages();
+  }
+  updateStatus('缩放已重置为 100%');
+}
+
+function toggleLeftSidebar() {
+  const leftSidebar = document.getElementById('leftSidebar');
+  if (leftSidebar) {
+    leftSidebar.classList.toggle('collapsed');
+    const isCollapsed = leftSidebar.classList.contains('collapsed');
+    updateStatus(isCollapsed ? '左侧面板已隐藏' : '左侧面板已显示');
+  }
+}
+
+function toggleRightSidebar() {
+  const rightSidebar = document.getElementById('rightSidebar');
+  if (rightSidebar) {
+    rightSidebar.classList.toggle('collapsed');
+    const isCollapsed = rightSidebar.classList.contains('collapsed');
+    updateStatus(isCollapsed ? '右侧面板已隐藏' : '右侧面板已显示');
+  }
+}
+
+function toggleFullscreen() {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen().catch(err => {
+      updateStatus('无法进入全屏模式');
+    });
+  } else {
+    document.exitFullscreen();
+  }
 }
 
 async function performMerge() {

@@ -85,6 +85,63 @@ body {
   color: var(--text-primary);
 }
 
+/* Submenu styles */
+.menu-item.has-submenu {
+  position: relative;
+}
+
+.menu-item.has-submenu .submenu {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  background: var(--bg-dark);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  min-width: 180px;
+  padding: 4px 0;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 1000;
+}
+
+.menu-item.has-submenu:hover > .submenu,
+.menu-item.has-submenu .submenu:hover {
+  display: block !important;
+}
+
+.submenu-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: background 0.15s;
+}
+
+.submenu-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.submenu-item .shortcut {
+  color: var(--text-secondary);
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.submenu-item.disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.submenu-divider {
+  height: 1px;
+  background: var(--border-color);
+  margin: 4px 0;
+}
+
 .app-title {
   position: absolute;
   left: 50%;
@@ -1244,6 +1301,69 @@ body {
 .help-section li strong {
   color: var(--text-primary);
   font-weight: 600;
+}
+
+/* Shortcuts Modal */
+.shortcuts-section {
+  margin-bottom: 20px;
+}
+
+.shortcuts-section h4 {
+  color: var(--primary-color);
+  margin-bottom: 10px;
+  font-size: 14px;
+}
+
+.shortcut-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-radius: 4px;
+  margin-bottom: 4px;
+}
+
+.shortcut-item:hover {
+  background: var(--bg-hover);
+}
+
+.shortcut-item .key {
+  background: var(--bg-medium);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 12px;
+  color: var(--primary-color);
+}
+
+/* About Modal */
+.about-content {
+  text-align: center;
+  padding: 20px;
+}
+
+.about-logo {
+  margin-bottom: 16px;
+}
+
+.about-content h2 {
+  margin-bottom: 8px;
+  color: var(--primary-color);
+}
+
+.about-content .version {
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+}
+
+.about-content .description {
+  color: var(--text-primary);
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+
+.about-content .copyright {
+  color: var(--text-secondary);
+  font-size: 12px;
 }
 
 .modal-footer {

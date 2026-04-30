@@ -11,12 +11,69 @@
     <!-- Top Menu Bar -->
     <div class="menu-bar">
       <div class="menu-items">
-        <div class="menu-item" data-action="file">文件</div>
-        <div class="menu-item" data-action="edit">编辑</div>
-        <div class="menu-item" data-action="view">视图</div>
-        <div class="menu-item" data-action="tools">工具</div>
-        <div class="menu-item" data-action="settings">设置</div>
-        <div class="menu-item" data-action="help">帮助</div>
+        <div class="menu-item has-submenu" data-action="file">
+          <span>文件</span>
+          <div class="submenu">
+            <div class="submenu-item" data-action="new">新建 <span class="shortcut">Ctrl+N</span></div>
+            <div class="submenu-item" data-action="open">打开... <span class="shortcut">Ctrl+O</span></div>
+            <div class="submenu-divider"></div>
+            <div class="submenu-item" data-action="save">保存 <span class="shortcut">Ctrl+S</span></div>
+            <div class="submenu-item" data-action="saveAs">另存为... <span class="shortcut">Ctrl+Shift+S</span></div>
+            <div class="submenu-divider"></div>
+            <div class="submenu-item" data-action="close">关闭文件</div>
+          </div>
+        </div>
+        <div class="menu-item has-submenu" data-action="edit">
+          <span>编辑</span>
+          <div class="submenu">
+            <div class="submenu-item" data-action="undo">撤销 <span class="shortcut">Ctrl+Z</span></div>
+            <div class="submenu-item" data-action="redo">重做 <span class="shortcut">Ctrl+Y</span></div>
+          </div>
+        </div>
+        <div class="menu-item has-submenu" data-action="view">
+          <span>视图</span>
+          <div class="submenu">
+            <div class="submenu-item" data-action="zoomIn">放大 <span class="shortcut">Ctrl++</span></div>
+            <div class="submenu-item" data-action="zoomOut">缩小 <span class="shortcut">Ctrl+-</span></div>
+            <div class="submenu-item" data-action="zoomReset">重置缩放 <span class="shortcut">Ctrl+0</span></div>
+            <div class="submenu-divider"></div>
+            <div class="submenu-item" data-action="toggleLeftSidebar">隐藏/显示左侧面板</div>
+            <div class="submenu-item" data-action="toggleRightSidebar">隐藏/显示右侧面板</div>
+            <div class="submenu-divider"></div>
+            <div class="submenu-item" data-action="fullscreen">全屏 <span class="shortcut">F11</span></div>
+          </div>
+        </div>
+        <div class="menu-item has-submenu" data-action="tools">
+          <span>工具</span>
+          <div class="submenu">
+            <div class="submenu-item" data-action="selectTool">选择工具 <span class="shortcut">V</span></div>
+            <div class="submenu-item" data-action="textTool">文本工具 <span class="shortcut">T</span></div>
+            <div class="submenu-item" data-action="highlightTool">高亮工具 <span class="shortcut">H</span></div>
+            <div class="submenu-item" data-action="underlineTool">下划线工具 <span class="shortcut">U</span></div>
+            <div class="submenu-item" data-action="eraserTool">橡皮擦工具 <span class="shortcut">E</span></div>
+            <div class="submenu-divider"></div>
+            <div class="submenu-item" data-action="openMergeModal">合并 PDF</div>
+            <div class="submenu-item" data-action="openSplitModal">拆分 PDF</div>
+            <div class="submenu-item" data-action="openWatermarkModal">添加水印</div>
+          </div>
+        </div>
+        <div class="menu-item has-submenu" data-action="settings">
+          <span>设置</span>
+          <div class="submenu">
+            <div class="submenu-item" data-action="openSettingsModal">偏好设置...</div>
+            <div class="submenu-divider"></div>
+            <div class="submenu-item" data-action="toggleAutoOpen">启动时自动打开上次文件</div>
+          </div>
+        </div>
+        <div class="menu-item has-submenu" data-action="help">
+          <span>帮助</span>
+          <div class="submenu">
+            <div class="submenu-item" data-action="openHelpModal">使用指南</div>
+            <div class="submenu-item" data-action="showShortcuts">快捷键</div>
+            <div class="submenu-divider"></div>
+            <div class="submenu-item" data-action="about">关于 PDF Editor</div>
+          </div>
+        </div>
       </div>
       <div class="app-title">PDF Editor</div>
       <div class="window-controls">
@@ -386,6 +443,80 @@
       </div>
       <div class="modal-footer">
         <button class="btn btn-primary" id="closeHelpModalBtn">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Shortcuts Modal -->
+  <div class="modal-overlay" id="shortcutsModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>快捷键</h3>
+        <button class="modal-close" id="closeShortcutsModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="shortcuts-section">
+          <h4>文件操作</h4>
+          <div class="shortcut-item"><span class="key">Ctrl+N</span><span>新建文件</span></div>
+          <div class="shortcut-item"><span class="key">Ctrl+O</span><span>打开文件</span></div>
+          <div class="shortcut-item"><span class="key">Ctrl+S</span><span>保存</span></div>
+          <div class="shortcut-item"><span class="key">Ctrl+Shift+S</span><span>另存为</span></div>
+        </div>
+        <div class="shortcuts-section">
+          <h4>编辑操作</h4>
+          <div class="shortcut-item"><span class="key">Ctrl+Z</span><span>撤销</span></div>
+          <div class="shortcut-item"><span class="key">Ctrl+Y</span><span>重做</span></div>
+        </div>
+        <div class="shortcuts-section">
+          <h4>视图操作</h4>
+          <div class="shortcut-item"><span class="key">Ctrl++</span><span>放大</span></div>
+          <div class="shortcut-item"><span class="key">Ctrl+-</span><span>缩小</span></div>
+          <div class="shortcut-item"><span class="key">Ctrl+0</span><span>重置缩放</span></div>
+          <div class="shortcut-item"><span class="key">F11</span><span>全屏</span></div>
+        </div>
+        <div class="shortcuts-section">
+          <h4>工具</h4>
+          <div class="shortcut-item"><span class="key">V</span><span>选择工具</span></div>
+          <div class="shortcut-item"><span class="key">T</span><span>文本工具</span></div>
+          <div class="shortcut-item"><span class="key">H</span><span>高亮工具</span></div>
+          <div class="shortcut-item"><span class="key">U</span><span>下划线工具</span></div>
+          <div class="shortcut-item"><span class="key">E</span><span>橡皮擦工具</span></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary" id="closeShortcutsModalBtn">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- About Modal -->
+  <div class="modal-overlay" id="aboutModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>关于 PDF Editor</h3>
+        <button class="modal-close" id="closeAboutModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="about-content">
+          <div class="about-logo">
+            <svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+              <rect x="8" y="4" width="48" height="56" rx="6" ry="6" fill="#E8F3FF"/>
+              <rect x="10" y="6" width="44" height="52" rx="4" ry="4" fill="#FFFFFF" stroke="#165DFF" stroke-width="1.5"/>
+              <path d="M10 6 L20 6 L20 16 Z" fill="#165DFF"/>
+              <path d="M28 24 L40 36 L38 40 L26 28 Z" fill="#165DFF"/>
+              <path d="M38 40 L42 44 L36 48 L32 44 Z" fill="#36CFC9"/>
+              <path d="M48 48 L48 56 M48 52 L52 52 M52 48 L52 56" stroke="#165DFF" stroke-width="2" stroke-linecap="round"/>
+              <text x="16" y="36" font-size="6" font-weight="bold" fill="#165DFF">PDF</text>
+            </svg>
+          </div>
+          <h2>PDF Editor</h2>
+          <p class="version">版本 1.0.0</p>
+          <p class="description">一个功能强大的 PDF 编辑器，支持文本编辑、批注、合并、拆分、水印等功能。</p>
+          <p class="copyright">© 2024 PDF Editor</p>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary" id="closeAboutModalBtn">关闭</button>
       </div>
     </div>
   </div>
