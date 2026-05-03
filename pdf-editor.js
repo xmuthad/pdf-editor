@@ -30,8 +30,6 @@ class PDFEditor {
     this.isDrawing = false;
     this.startX = 0;
     this.startY = 0;
-    this.currentX = 0;
-    this.currentY = 0;
 
     this.textItems = [];
     this.selectedTextItem = null;
@@ -42,7 +40,7 @@ class PDFEditor {
     this.textItemsCache = new Map();
     this.maxCacheSize = 50;
     
-    this.ocrEngine = null;
+    this.ocrAvailable = false;
     this.isScanned = false;
   }
 
@@ -112,16 +110,9 @@ class PDFEditor {
       const firstPageText = await this.extractTextContent(1);
       this.isScanned = firstPageText.status === 'empty' || firstPageText.items.length === 0;
       
-      if (this.isScanned && window.OCREngine) {
-        this.ocrEngine = new window.OCREngine({
-          lang: 'eng+chi_sim',
-          logger: (m) => {
-            if (m.status === 'recognizing text') {
-              console.log(`[OCR] 识别进度：${(m.progress * 100).toFixed(1)}%`);
-            }
-          }
-        });
-        console.log('[INFO] PDF appears to be scanned, OCR engine ready');
+      if (this.isScanned && window.pdfAPI && window.pdfAPI.ocrRecognize) {
+        this.ocrAvailable = true;
+        console.log('[INFO] PDF appears to be scanned, OCR available via IPC');
       }
     } catch (error) {
       console.warn('Failed to check if PDF is scanned:', error);
@@ -130,31 +121,18 @@ class PDFEditor {
   }
 
   async performOCR(pageNum = 1) {
-    if (!this.ocrEngine) {
+    if (!this.ocrAvailable) {
       throw new Error('OCR engine not initialized');
     }
 
     try {
-      const canvas = document.createElement('canvas');
-      const page = await this.pdfDoc.getPage(pageNum);
-      const viewport = page.getViewport({ scale: 2.0 });
-      
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
-      const ctx = canvas.getContext('2d');
-      
-      await page.render({
-        canvasContext: ctx,
-        viewport: viewport
-      }).promise;
+      const ocrResult = await window.pdfAPI.ocrRecognize(this.pdfPath, pageNum, {});
 
-      const ocrResult = await this.ocrEngine.recognizeCanvas(canvas, { page: pageNum });
-      
       const textItems = ocrResult.words.map((word, index) => ({
         id: `ocr_${pageNum}_${index}`,
         text: word.text,
         x: word.bbox.x0 / 2.0,
-        y: (canvas.height - word.bbox.y1) / 2.0,
+        y: word.bbox.y1 / 2.0,
         width: (word.bbox.x1 - word.bbox.x0) / 2.0,
         height: (word.bbox.y1 - word.bbox.y0) / 2.0,
         fontSize: 12,
@@ -417,23 +395,18 @@ class PDFEditor {
   async loadTextForPage(pageNum) {
     const cacheKey = `page_${pageNum}`;
 
-    console.log('[DEBUG] loadTextForPage:', pageNum, 'cache has:', this.textItemsCache.has(cacheKey));
-    
     if (this.textItemsCache.has(cacheKey)) {
       this.textItems = this.textItemsCache.get(cacheKey);
-      console.log('[DEBUG] loadTextForPage: using cache, items:', this.textItems.length);
       return this.textItems;
     }
-    
+
     if (this.currentPage !== pageNum || !this.textItems || this.textItems.length === 0) {
       this.currentPage = pageNum;
-      console.log('[DEBUG] loadTextForPage: extracting text content for page', pageNum);
       const result = await this.extractTextContent(pageNum);
       this.textItems = result.items || [];
       this.textStatus = result.status || 'unknown';
       this.textStatusMessage = result.message || '';
-      console.log('[DEBUG] loadTextForPage: extracted items:', this.textItems.length, 'status:', this.textStatus);
-      
+
       if (this.textItemsCache.size >= this.maxCacheSize) {
         const firstKey = this.textItemsCache.keys().next().value;
         this.textItemsCache.delete(firstKey);
@@ -458,9 +431,7 @@ class PDFEditor {
     this.redoStack = [];
     this.textItems = [];
     this.selectedTextItem = null;
-    if (this.ocrEngine) {
-      this.ocrEngine = null;
-    }
+    this.ocrAvailable = false;
   }
 
   getTextStatus() {
@@ -936,7 +907,7 @@ class PDFEditor {
   }
 
   getOperations() {
-    return this.operations.filter(op => op.type === 'editText');
+    return this.operations;
   }
 
   handleMouseDown(e) {
@@ -993,10 +964,6 @@ class PDFEditor {
 
   handleMouseMove(e) {
     if (!this.isDrawing) return;
-
-    const rect = this.canvas.getBoundingClientRect();
-    this.currentX = e.clientX - rect.left;
-    this.currentY = e.clientY - rect.top;
   }
 
   handleMouseUp(e) {

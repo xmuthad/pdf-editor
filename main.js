@@ -1,6 +1,8 @@
 const { app, BrowserWindow, ipcMain, dialog, nativeImage } = require('electron');
 const path = require('path');
 const { mergePDFs, splitPDF, addWatermark, loadPDF, applyEdits, rotatePDF, deletePages, protectPDF, getBookmarks, addBookmarks } = require('./pdf-utils');
+const OCREngine = require('./ocr-engine');
+const { validateString, validateArray, validateNumber, validateBuffer, validateObject } = require('./validation');
 const fs = require('fs').promises;
 
 const settingsPath = path.join(app.getPath('userData'), 'settings.json');
@@ -74,7 +76,9 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
-      sandbox: false
+      sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false
     }
   });
 
@@ -100,58 +104,74 @@ function safeIpcHandler(handlerName, handler) {
 
 // Validate file path to prevent path traversal attacks
 function validateFilePath(filePath) {
-  if (typeof filePath !== 'string') {
+  validateString(filePath, 'filePath', 4096);
+  const resolved = path.resolve(filePath);
+  if (resolved.includes('..') || resolved !== path.normalize(resolved)) {
     throw new Error('Invalid file path');
   }
-  // Check for path traversal attempts
-  if (filePath.includes('..') || filePath.includes('~')) {
+  if (filePath.includes('~')) {
     throw new Error('Invalid file path');
   }
-  return filePath;
+  return resolved;
 }
 
-// Validate array of file paths
 function validateFilePaths(filePaths) {
-  if (!Array.isArray(filePaths)) {
-    throw new Error('Invalid file paths');
-  }
+  validateArray(filePaths, 'filePaths', 100);
   return filePaths.map(validateFilePath);
 }
 
-// Validate page numbers array
 function validatePageNumbers(pageNumbers) {
-  if (!Array.isArray(pageNumbers)) {
-    throw new Error('Invalid page numbers');
-  }
+  validateArray(pageNumbers, 'pageNumbers', 10000);
   for (const num of pageNumbers) {
-    if (typeof num !== 'number' || num < 1 || !Number.isInteger(num)) {
-      throw new Error('Invalid page number');
-    }
+    validateNumber(num, 'pageNumber', 1, 100000);
   }
   return pageNumbers;
 }
 
-// Original IPC handlers
+const VALID_IMAGE_FORMATS = ['png', 'jpeg', 'jpg'];
+
 ipcMain.handle('pdf:merge', safeIpcHandler('pdf:merge', (_, files) => mergePDFs(validateFilePaths(files))));
-ipcMain.handle('pdf:split', safeIpcHandler('pdf:split', (_, file, ranges) => splitPDF(validateFilePath(file), ranges)));
-ipcMain.handle('pdf:watermark', safeIpcHandler('pdf:watermark', (_, file, text) => addWatermark(validateFilePath(file), text)));
+ipcMain.handle('pdf:split', safeIpcHandler('pdf:split', (_, file, ranges) => {
+  validateFilePath(file);
+  validateArray(ranges, 'ranges', 1000);
+  return splitPDF(file, ranges);
+}));
+ipcMain.handle('pdf:watermark', safeIpcHandler('pdf:watermark', (_, file, text, options) => {
+  validateFilePath(file);
+  validateString(text, 'watermark text', 500);
+  if (options !== undefined) validateObject(options, 'options');
+  return addWatermark(file, text, options);
+}));
 
-// New editor IPC handlers
 ipcMain.handle('pdf:load', safeIpcHandler('pdf:load', (_, filePath) => loadPDF(validateFilePath(filePath))));
-ipcMain.handle('pdf:applyEdits', safeIpcHandler('pdf:applyEdits', (_, filePath, operations) => applyEdits(validateFilePath(filePath), operations)));
+ipcMain.handle('pdf:applyEdits', safeIpcHandler('pdf:applyEdits', (_, filePath, operations) => {
+  validateFilePath(filePath);
+  validateArray(operations, 'operations', 10000);
+  return applyEdits(filePath, operations);
+}));
 
-// File dialog for saving PDF
+let allowedWritePaths = new Set();
+
 ipcMain.handle('file:saveDialog', safeIpcHandler('file:saveDialog', async (_, defaultPath) => {
   const result = await dialog.showSaveDialog(mainWindow, {
     defaultPath: defaultPath ? validateFilePath(defaultPath) : undefined,
-    filters: [{ name: 'PDF Files', extensions: ['pdf'] }]
+    filters: [{ name: 'PDF Files', extensions: ['pdf'] }, { name: 'Images', extensions: ['png', 'jpg', 'jpeg'] }]
   });
+  if (!result.canceled && result.filePath) {
+    allowedWritePaths.add(result.filePath);
+    setTimeout(() => allowedWritePaths.delete(result.filePath), 60000);
+  }
   return result;
 }));
 
-// Write file to disk
 ipcMain.handle('file:write', safeIpcHandler('file:write', async (_, filePath, buffer) => {
-  await fs.writeFile(validateFilePath(filePath), Buffer.from(buffer));
+  const resolvedPath = validateFilePath(filePath);
+  validateBuffer(buffer, 'buffer');
+  if (!allowedWritePaths.has(resolvedPath)) {
+    throw new Error('Write access denied: path must be selected via save dialog');
+  }
+  allowedWritePaths.delete(resolvedPath);
+  await fs.writeFile(resolvedPath, Buffer.from(buffer));
   return true;
 }));
 
@@ -180,7 +200,7 @@ ipcMain.handle('pdf:readFile', safeIpcHandler('pdf:readFile', async (_, filePath
 
 // Rotate PDF pages
 ipcMain.handle('pdf:rotate', safeIpcHandler('pdf:rotate', (_, filePath, pageNumbers, degrees) =>
-  rotatePDF(validateFilePath(filePath), validatePageNumbers(pageNumbers), degrees)
+  rotatePDF(validateFilePath(filePath), validatePageNumbers(pageNumbers), validateNumber(degrees, 'degrees', -360, 360))
 ));
 
 // Delete PDF pages
@@ -188,11 +208,14 @@ ipcMain.handle('pdf:deletePages', safeIpcHandler('pdf:deletePages', (_, filePath
   deletePages(validateFilePath(filePath), validatePageNumbers(pageNumbers))
 ));
 
-// Convert PDF page to image - returns raw image data for renderer to process
 ipcMain.handle('pdf:convertToImage', safeIpcHandler('pdf:convertToImage', async (_, filePath, pageNum, format, scale) => {
   validateFilePath(filePath);
-  if (typeof pageNum !== 'number' || pageNum < 1 || !Number.isInteger(pageNum)) {
-    throw new Error('Invalid page number');
+  validateNumber(pageNum, 'pageNum', 1, 100000);
+  if (format !== undefined && !VALID_IMAGE_FORMATS.includes(format)) {
+    throw new Error('Invalid image format');
+  }
+  if (scale !== undefined) {
+    validateNumber(scale, 'scale', 0.1, 10);
   }
 
   const pdfjsLib = await getPdfjsLib();
@@ -200,26 +223,50 @@ ipcMain.handle('pdf:convertToImage', safeIpcHandler('pdf:convertToImage', async 
   const typedArray = new Uint8Array(fileData);
   const pdf = await pdfjsLib.getDocument(typedArray).promise;
   const page = await pdf.getPage(pageNum);
-  const viewport = page.getViewport({ scale });
+  const actualScale = scale || 2.0;
+  const viewport = page.getViewport({ scale: actualScale });
+
+  const { createCanvas } = await import('canvas');
+  const canvas = createCanvas(viewport.width, viewport.height);
+  const ctx = canvas.getContext('2d');
+
+  await page.render({
+    canvasContext: ctx,
+    viewport: viewport
+  }).promise;
+
+  const imageFormat = format || 'png';
+  const mimeType = imageFormat === 'jpeg' ? 'image/jpeg' : 'image/png';
+  const buffer = canvas.toBuffer(mimeType);
 
   return {
     width: viewport.width,
-    height: viewport.height, pageNum, format, scale
+    height: viewport.height,
+    pageNum,
+    format: imageFormat,
+    scale: actualScale,
+    data: Array.from(buffer)
   };
 }));
 
 // Protect PDF with password
-ipcMain.handle('pdf:protect', safeIpcHandler('pdf:protect', (_, filePath, userPassword, ownerPassword, permissions) =>
-  protectPDF(validateFilePath(filePath), userPassword, ownerPassword, permissions)
-));
+ipcMain.handle('pdf:protect', safeIpcHandler('pdf:protect', (_, filePath, userPassword, ownerPassword, permissions) => {
+  validateFilePath(filePath);
+  if (userPassword !== undefined) validateString(userPassword, 'userPassword', 128);
+  if (ownerPassword !== undefined) validateString(ownerPassword, 'ownerPassword', 128);
+  if (permissions !== undefined) validateObject(permissions, 'permissions');
+  return protectPDF(filePath, userPassword, ownerPassword, permissions);
+}));
 
 // Get PDF bookmarks
 ipcMain.handle('pdf:getBookmarks', safeIpcHandler('pdf:getBookmarks', (_, filePath) => getBookmarks(validateFilePath(filePath))));
 
 // Add PDF bookmarks
-ipcMain.handle('pdf:addBookmarks', safeIpcHandler('pdf:addBookmarks', (_, filePath, bookmarks) =>
-  addBookmarks(validateFilePath(filePath), bookmarks)
-));
+ipcMain.handle('pdf:addBookmarks', safeIpcHandler('pdf:addBookmarks', (_, filePath, bookmarks) => {
+  validateFilePath(filePath);
+  validateArray(bookmarks, 'bookmarks', 1000);
+  return addBookmarks(filePath, bookmarks);
+}));
 
 // Settings IPC handlers
 ipcMain.handle('settings:get', safeIpcHandler('settings:get', async () => {
@@ -227,7 +274,30 @@ ipcMain.handle('settings:get', safeIpcHandler('settings:get', async () => {
 }));
 
 ipcMain.handle('settings:set', safeIpcHandler('settings:set', async (_, settings) => {
+  validateObject(settings, 'settings');
   return await saveSettings(settings);
+}));
+
+let ocrEngineInstance = null;
+
+ipcMain.handle('ocr:recognize', safeIpcHandler('ocr:recognize', async (_, filePath, pageNum, options) => {
+  validateFilePath(filePath);
+  validateNumber(pageNum, 'pageNum', 1, 100000);
+  if (options !== undefined) validateObject(options, 'options');
+  if (!ocrEngineInstance) {
+    ocrEngineInstance = new OCREngine({
+      lang: 'eng+chi_sim',
+      logger: (m) => {
+        if (m.status === 'recognizing text') {
+          console.log(`[OCR] Progress: ${(m.progress * 100).toFixed(1)}%`);
+        }
+      }
+    });
+  }
+  await ocrEngineInstance.init();
+  const fileData = await fs.readFile(filePath);
+  const result = await ocrEngineInstance.recognize(fileData, { page: pageNum, ...options });
+  return result;
 }));
 
 app.whenReady().then(() => {

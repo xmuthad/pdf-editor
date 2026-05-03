@@ -101,7 +101,7 @@ describe('OCREngine', () => {
     test('should handle initialization failure', async () => {
       require('tesseract.js').createWorker.mockRejectedValueOnce(new Error('Failed to load language'));
       const badOcr = new OCREngine({ lang: 'invalid_lang_123' });
-      await expect(badOcr.init()).rejects.toThrow('OCR 初始化失败');
+      await expect(badOcr.init()).rejects.toThrow('OCR initialization failed');
     });
   });
 
@@ -210,8 +210,8 @@ describe('OCREngine', () => {
       const params = { tessedit_char_whitelist: '0123456789' };
       await ocr.setParameters(params);
 
-      expect(mockWorker.loadLanguage).toHaveBeenCalled();
-      expect(mockWorker.initialize).toHaveBeenCalled();
+      expect(ocr.isInitialized).toBe(true);
+      expect(mockWorker.setParameters).toHaveBeenCalledWith(params);
     });
   });
 });

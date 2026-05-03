@@ -528,7 +528,7 @@ describe('PDFEditor', () => {
   });
 
   describe('getOperations', () => {
-    it('should return only editText operations', () => {
+    it('should return all operations', () => {
       editor.operations = [
         { type: 'editText', page: 1 },
         { type: 'text', page: 2 },
@@ -537,8 +537,10 @@ describe('PDFEditor', () => {
       editor.undoStack = [];
       editor.redoStack = [];
       const ops = editor.getOperations();
-      expect(ops.length).toBe(1);
+      expect(ops.length).toBe(3);
       expect(ops[0].type).toBe('editText');
+      expect(ops[1].type).toBe('text');
+      expect(ops[2].type).toBe('image');
     });
 
     it('should return empty array when no operations', () => {

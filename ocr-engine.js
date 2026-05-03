@@ -1,4 +1,3 @@
-// OCR Module - Text recognition for scanned PDFs
 const Tesseract = require('tesseract.js');
 
 class OCREngine {
@@ -24,16 +23,15 @@ class OCREngine {
     try {
       console.log('[OCR] Initializing Tesseract worker...');
 
-      this.worker = await Tesseract.createWorker(this.options.lang);
-      
-      await this.worker.loadLanguage(this.options.lang);
-      await this.worker.initialize(this.options.lang);
-      
+      this.worker = await Tesseract.createWorker(this.options.lang, 1, {
+        logger: this.options.logger
+      });
+
       this.isInitialized = true;
       console.log('[OCR] Worker initialized successfully');
     } catch (error) {
       console.error('[OCR] Failed to initialize worker:', error);
-      throw new Error(`OCR 初始化失败：${error.message}`);
+      throw new Error(`OCR initialization failed: ${error.message}`);
     }
   }
 
@@ -113,7 +111,7 @@ class OCREngine {
       return result;
     } catch (error) {
       console.error('[OCR] Recognition failed:', error);
-      throw new Error(`OCR 识别失败：${error.message}`);
+      throw new Error(`OCR recognition failed: ${error.message}`);
     }
   }
 
