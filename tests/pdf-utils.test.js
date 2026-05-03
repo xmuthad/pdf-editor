@@ -26,8 +26,9 @@ describe('pdf-utils', () => {
     });
 
     it('should throw error for non-string path in array', async () => {
-      const { mergePDFs } = require('../pdf-utils');
-      await expect(mergePDFs([123])).rejects.toThrow('filePath must be a string');
+      const pdfUtils = require('../pdf-utils');
+      pdfUtils._resetMergePromise();
+      await expect(pdfUtils.mergePDFs([123])).rejects.toThrow('filePath must be a string');
     });
 
     it('should throw error for invalid file path', async () => {
@@ -198,6 +199,63 @@ describe('pdf-utils', () => {
     it('should throw error for invalid file path', async () => {
       const { getBookmarks } = require('../pdf-utils');
       await expect(getBookmarks('/nonexistent.pdf')).rejects.toThrow();
+    });
+
+    it('should return bookmarks with correct page numbers for PDF with bookmarks', async () => {
+      const { getBookmarks, addBookmarks, mergePDFs } = require('../pdf-utils');
+      const mergedPdf = await mergePDFs([testPdfPath, testPdfPath]);
+      const tmpMergePath = path.join(__dirname, 'test-merged-2pages.pdf');
+      await fs.writeFile(tmpMergePath, mergedPdf);
+
+      try {
+        const bookmarks = [
+          { title: 'Chapter 1', page: 1 },
+          { title: 'Chapter 2', page: 2 }
+        ];
+
+        const pdfWithBookmarks = await addBookmarks(tmpMergePath, bookmarks);
+        const tmpPath = path.join(__dirname, 'test-with-bookmarks.pdf');
+        await fs.writeFile(tmpPath, pdfWithBookmarks);
+
+        try {
+          const result = await getBookmarks(tmpPath);
+
+          expect(Array.isArray(result)).toBe(true);
+          expect(result.length).toBe(2);
+          expect(result[0].title).toBe('Chapter 1');
+          expect(result[0].page).toBe(1);
+          expect(result[0].pageIndex).toBe(0);
+          expect(result[1].title).toBe('Chapter 2');
+          expect(result[1].page).toBe(2);
+          expect(result[1].pageIndex).toBe(1);
+        } finally {
+          await fs.unlink(tmpPath).catch(() => {});
+        }
+      } finally {
+        await fs.unlink(tmpMergePath).catch(() => {});
+      }
+    });
+
+    it('should return bookmarks with level information', async () => {
+      const { getBookmarks, addBookmarks } = require('../pdf-utils');
+      const bookmarks = [
+        { title: 'Top Level', page: 1 }
+      ];
+
+      const pdfWithBookmarks = await addBookmarks(testPdfPath, bookmarks);
+      const tmpPath = path.join(__dirname, 'test-with-level.pdf');
+      await fs.writeFile(tmpPath, pdfWithBookmarks);
+
+      try {
+        const result = await getBookmarks(tmpPath);
+
+        expect(result.length).toBeGreaterThanOrEqual(1);
+        expect(result[0]).toHaveProperty('level');
+        expect(result[0]).toHaveProperty('page');
+        expect(result[0]).toHaveProperty('pageIndex');
+      } finally {
+        await fs.unlink(tmpPath).catch(() => {});
+      }
     });
   });
 

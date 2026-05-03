@@ -8,13 +8,13 @@
 }
 
 :root {
-  /* Adobe-inspired color scheme */
   --primary-color: #1473e6;
   --primary-hover: #005fb8;
   --bg-dark: #2b2b2b;
   --bg-medium: #3b3b3b;
   --bg-light: #535353;
   --bg-hover: #4a4a4a;
+  --bg-primary: #1e1e1e;
   --text-primary: #ffffff;
   --text-secondary: #b8b8b8;
   --border-color: #4a4a4a;
@@ -22,6 +22,7 @@
   --success-color: #0f9d58;
   --warning-color: #f4b400;
   --danger-color: #db4437;
+  --highlight-color: #ffc107;
   --toolbar-bg: #333333;
   --sidebar-bg: #2b2b2b;
   --workspace-bg: #1e1e1e;
@@ -538,6 +539,33 @@ body {
   background: var(--bg-hover);
 }
 
+.outline-item.outline-item-active {
+  background: var(--accent-color, #4a9eff);
+  color: #fff;
+}
+
+.outline-item.outline-item-active .outline-title {
+  color: #fff;
+}
+
+.outline-item.outline-item-active .outline-page {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+
+.outline-item-nolink {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.outline-item-nolink:hover {
+  background: var(--bg-medium);
+}
+
+.outline-item-linkable {
+  cursor: pointer;
+}
+
 .outline-item-child {
   background: var(--bg-dark);
   margin-left: 8px;
@@ -921,12 +949,6 @@ body {
 .btn-danger:hover {
   background: #ff7875;
   transform: translateY(-1px);
-}
-
-.modal-footer {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
 }
 
 .property-section {

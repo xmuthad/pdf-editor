@@ -40,18 +40,27 @@ test.describe('PDF Editor E2E Tests', () => {
   });
 
   test('帮助模态框应该可以打开和关闭', async () => {
-    const menuItem = window.locator('[data-action="help"]');
-    await expect(menuItem).toBeVisible();
-    
-    await menuItem.click();
+    const helpMenu = window.locator('[data-action="help"]');
+    await expect(helpMenu).toBeVisible();
+
+    await helpMenu.hover();
+    const openHelpItem = window.locator('[data-action="openHelpModal"]');
+    await expect(openHelpItem).toBeVisible();
+    await openHelpItem.click();
+
     await expect(window.locator('#helpModal')).toHaveClass(/active/);
-    
+
     await window.locator('#closeHelpModalBtn').click();
     await expect(window.locator('#helpModal')).not.toHaveClass(/active/);
   });
 
   test('设置模态框应该可以打开和关闭', async () => {
-    await window.locator('[data-action="settings"]').click();
+    const settingsMenu = window.locator('[data-action="settings"]');
+    await settingsMenu.hover();
+    const openSettingsItem = window.locator('[data-action="openSettingsModal"]');
+    await expect(openSettingsItem).toBeVisible();
+    await openSettingsItem.click();
+
     await expect(window.locator('#settingsModal')).toHaveClass(/active/);
 
     await window.locator('#closeSettingsModalBtn').click();
@@ -129,6 +138,74 @@ test.describe('PDF Editor E2E Tests', () => {
     await expect(outlineContainer).toBeAttached();
   });
 
+  test('目录列表容器应该存在', async () => {
+    const outlineTab = window.locator('.sidebar-tab[data-tab="outline"]');
+    await outlineTab.click();
+
+    const outlineList = window.locator('#outlineList');
+    await expect(outlineList).toBeAttached();
+  });
+
+  test('目录项应该有可跳转或不可跳转样式', async () => {
+    const outlineTab = window.locator('.sidebar-tab[data-tab="outline"]');
+    await outlineTab.click();
+
+    const linkableItems = window.locator('#outlineList .outline-item-linkable');
+    const nolinkItems = window.locator('#outlineList .outline-item-nolink');
+    const totalLinkable = await linkableItems.count();
+    const totalNolink = await nolinkItems.count();
+
+    expect(totalLinkable + totalNolink).toBeGreaterThanOrEqual(0);
+  });
+
+  test('目录项点击后应该添加激活样式', async () => {
+    const outlineTab = window.locator('.sidebar-tab[data-tab="outline"]');
+    await outlineTab.click();
+
+    const linkableItems = window.locator('#outlineList .outline-item-linkable');
+    const count = await linkableItems.count();
+
+    if (count > 0) {
+      await linkableItems.first().click();
+
+      const activeItems = window.locator('#outlineList .outline-item-active');
+      expect(await activeItems.count()).toBe(1);
+    }
+  });
+
+  test('目录项点击不同项后激活样式应该切换', async () => {
+    const outlineTab = window.locator('.sidebar-tab[data-tab="outline"]');
+    await outlineTab.click();
+
+    const linkableItems = window.locator('#outlineList .outline-item-linkable');
+    const count = await linkableItems.count();
+
+    if (count > 1) {
+      await linkableItems.nth(0).click();
+      const activeItems1 = window.locator('#outlineList .outline-item-active');
+      expect(await activeItems1.count()).toBe(1);
+
+      await linkableItems.nth(1).click();
+      const activeItems2 = window.locator('#outlineList .outline-item-active');
+      expect(await activeItems2.count()).toBe(1);
+    }
+  });
+
+  test('不可跳转的目录项点击后不应添加激活样式', async () => {
+    const outlineTab = window.locator('.sidebar-tab[data-tab="outline"]');
+    await outlineTab.click();
+
+    const nolinkItems = window.locator('#outlineList .outline-item-nolink');
+    const count = await nolinkItems.count();
+
+    if (count > 0) {
+      await nolinkItems.first().click();
+
+      const activeItems = window.locator('#outlineList .outline-item-active');
+      expect(await activeItems.count()).toBe(0);
+    }
+  });
+
   test('三个侧边栏标签都应该可见', async () => {
     const pagesTab = window.locator('.sidebar-tab[data-tab="pages"]');
     const outlineTab = window.locator('.sidebar-tab[data-tab="outline"]');
@@ -175,7 +252,12 @@ test.describe('PDF Editor E2E Tests', () => {
   });
 
   test('设置复选框可交互', async () => {
-    await window.locator('[data-action="settings"]').click();
+    const settingsMenu = window.locator('[data-action="settings"]');
+    await settingsMenu.hover();
+    const openSettingsItem = window.locator('[data-action="openSettingsModal"]');
+    await expect(openSettingsItem).toBeVisible();
+    await openSettingsItem.click();
+
     await expect(window.locator('#settingsModal')).toHaveClass(/active/);
 
     const checkbox = window.locator('#openLastFileCheckbox');

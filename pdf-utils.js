@@ -1,4 +1,4 @@
-const { PDFDocument, rgb, StandardFonts, degrees, PDFName, PDFDict, PDFNumber, PDFString, PDFArray, PDFRef, PDFHexString } = require('pdf-lib');
+const { PDFDocument, rgb, StandardFonts, degrees, PDFName, PDFHexString } = require('pdf-lib');
 const fs = require('fs').promises;
 const {
   validateString,
@@ -23,41 +23,49 @@ async function loadPdfDocument(filePath) {
   }
 }
 
-let mergeInProgress = false;
+let mergePromise = null;
+
+// Exposed for testing only
+function _resetMergePromise() {
+  mergePromise = null;
+}
 
 async function mergePDFs(filePaths) {
-  if (mergeInProgress) {
+  if (mergePromise) {
     throw new Error('Another merge operation is in progress');
   }
-  mergeInProgress = true;
 
-  try {
-    validateArray(filePaths, 'filePaths');
+  mergePromise = (async () => {
+    try {
+      validateArray(filePaths, 'filePaths');
 
-    const pdfDocs = await Promise.all(
-      filePaths.map(async (filePath) => {
-        validateString(filePath, 'filePath');
-        try {
-          const fileData = await fs.readFile(filePath);
-          return await PDFDocument.load(fileData);
-        } catch (error) {
-          throw new Error(`Failed to read PDF file ${filePath}: ${error.message}`);
-        }
-      })
-    );
+      const pdfDocs = await Promise.all(
+        filePaths.map(async (filePath) => {
+          validateString(filePath, 'filePath');
+          try {
+            const fileData = await fs.readFile(filePath);
+            return await PDFDocument.load(fileData);
+          } catch (error) {
+            throw new Error(`Failed to read PDF file ${filePath}: ${error.message}`);
+          }
+        })
+      );
 
-    const mergedPdf = await PDFDocument.create();
+      const mergedPdf = await PDFDocument.create();
 
-    for (const pdfDoc of pdfDocs) {
-      const pages = await mergedPdf.copyPages(pdfDoc, pdfDoc.getPageIndices());
-      pages.forEach(page => mergedPdf.addPage(page));
+      for (const pdfDoc of pdfDocs) {
+        const pages = await mergedPdf.copyPages(pdfDoc, pdfDoc.getPageIndices());
+        pages.forEach(page => mergedPdf.addPage(page));
+      }
+
+      const mergedBytes = await mergedPdf.save();
+      return Buffer.from(mergedBytes);
+    } finally {
+      mergePromise = null;
     }
+  })();
 
-    const mergedBytes = await mergedPdf.save();
-    return Buffer.from(mergedBytes);
-  } finally {
-    mergeInProgress = false;
-  }
+  return mergePromise;
 }
 
 async function splitPDF(filePath, ranges) {
@@ -393,9 +401,13 @@ async function protectPDF(filePath, userPassword, ownerPassword, permissions) {
     throw new Error(`Failed to read PDF file: ${error.message}`);
   }
 
+  if (!ownerPassword) {
+    throw new Error('ownerPassword is required for PDF protection');
+  }
+
   const encryptedPdf = await pdfDoc.save({
     userPassword,
-    ownerPassword: ownerPassword || userPassword + '_owner',
+    ownerPassword,
     permissions: {
       printing: permissions?.printing || 'highResolution',
       modifying: permissions?.modifying || false,
@@ -445,6 +457,173 @@ async function getBookmarks(filePath) {
   const MAX_DEPTH = 20;
   const MAX_BOOKMARKS = 1000;
 
+  function isPDFRef(obj) {
+    if (!obj) return false;
+    if (obj.constructor && obj.constructor.name === 'PDFRef') return true;
+    if (typeof obj.objectNumber === 'number' && typeof obj.generationNumber === 'number') return true;
+    return false;
+  }
+
+  function findPageIndex(pageRef, doc) {
+    try {
+      const pages = doc.getPages();
+      const refStr = pageRef.toString();
+      for (let i = 0; i < pages.length; i++) {
+        if (pages[i].ref.toString() === refStr) {
+          return i;
+        }
+      }
+      const lookedUp = doc.context.lookup(pageRef);
+      if (lookedUp) {
+        const lookedUpStr = lookedUp.toString();
+        for (let i = 0; i < pages.length; i++) {
+          if (pages[i].ref.toString() === lookedUpStr) {
+            return i;
+          }
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+    return -1;
+  }
+
+  function resolveDestPageRef(destObj, doc, cat) {
+    if (!destObj) return null;
+
+    // JS Array (already resolved)
+    if (Array.isArray(destObj)) {
+      return destObj[0] || null;
+    }
+
+    // PDFArray object from pdf-lib
+    if (typeof destObj === 'object' && typeof destObj.get === 'function' && typeof destObj.size === 'function') {
+      try {
+        const firstElem = destObj.get(0);
+        if (firstElem) return firstElem;
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    // PDFRef or indirect reference
+    if (isPDFRef(destObj)) {
+      return destObj;
+    }
+
+    // PDFHexString or PDFName (named destination)
+    if (typeof destObj === 'object' && typeof destObj.decodeText === 'function') {
+      const destName = destObj.decodeText();
+      return resolveNamedDest(destName, doc, cat);
+    }
+
+    // PDFName
+    if (typeof destObj === 'object' && typeof destObj.toString === 'function') {
+      const str = destObj.toString();
+      if (str.startsWith('/')) {
+        return resolveNamedDest(str.substring(1), doc, cat);
+      }
+      return resolveNamedDest(str, doc, cat);
+    }
+
+    return null;
+  }
+
+  function resolveNamedDest(name, doc, cat) {
+    if (!name) return null;
+
+    // Try Names tree first
+    const names = cat.get(PDFName.of('Names'));
+    if (names && typeof names.get === 'function') {
+      const destsTree = names.get(PDFName.of('Dests'));
+      if (destsTree) {
+        const result = resolveNamedDestFromTree(PDFName.of(name), destsTree, doc);
+        if (result) return result;
+      }
+    }
+
+    // Try Dests dict
+    const dests = cat.get(PDFName.of('Dests'));
+    if (dests && typeof dests.get === 'function') {
+      try {
+        const namedDest = dests.get(PDFName.of(name));
+        if (namedDest) {
+          if (Array.isArray(namedDest)) {
+            return namedDest[0] || null;
+          }
+          if (typeof namedDest === 'object' && typeof namedDest.get === 'function' && typeof namedDest.size === 'function') {
+            return namedDest.get(0) || null;
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    return null;
+  }
+
+  function pdfObjToStr(obj) {
+    if (!obj) return '';
+    if (typeof obj === 'string') return obj;
+    if (typeof obj === 'object' && typeof obj.decodeText === 'function') return obj.decodeText();
+    if (typeof obj === 'object' && typeof obj.toString === 'function') return obj.toString().replace(/^\//, '');
+    return String(obj);
+  }
+
+  function resolveNamedDestFromTree(destName, tree, doc) {
+    if (!tree || typeof tree.get !== 'function') return null;
+
+    const nameStr = pdfObjToStr(destName);
+
+    // Check if this is a name tree node with Kids (intermediate node)
+    const kids = tree.get(PDFName.of('Kids'));
+    if (kids && typeof kids === 'object' && typeof kids.get === 'function') {
+      for (let i = 0; i < (kids.size ? kids.size() : 0); i++) {
+        try {
+          const kidRef = kids.get(i);
+          const kid = doc.context.lookup(kidRef);
+          const limits = kid.get(PDFName.of('Limits'));
+          if (limits && typeof limits === 'object' && typeof limits.get === 'function') {
+            const lowStr = pdfObjToStr(limits.get(0));
+            const highStr = pdfObjToStr(limits.get(1));
+            if (nameStr < lowStr || nameStr > highStr) continue;
+          }
+          const result = resolveNamedDestFromTree(destName, kid, doc);
+          if (result) return result;
+        } catch (e) {
+          continue;
+        }
+      }
+      return null;
+    }
+
+    // Leaf node - check Names array
+    const namesArr = tree.get(PDFName.of('Names'));
+    if (namesArr && typeof namesArr === 'object' && typeof namesArr.get === 'function') {
+      const size = namesArr.size ? namesArr.size() : 0;
+      for (let i = 0; i < size - 1; i += 2) {
+        try {
+          const key = namesArr.get(i);
+          const val = namesArr.get(i + 1);
+          if (pdfObjToStr(key) === nameStr) {
+            if (Array.isArray(val)) {
+              return val[0] || null;
+            }
+            if (typeof val === 'object' && typeof val.get === 'function' && typeof val.size === 'function') {
+              return val.get(0) || null;
+            }
+            return val;
+          }
+        } catch (e) {
+          continue;
+        }
+      }
+    }
+
+    return null;
+  }
+
   function parseBookmark(bookmarkRef, level = 0) {
     if (bookmarks.length >= MAX_BOOKMARKS) {
       return null;
@@ -468,21 +647,7 @@ async function getBookmarks(filePath) {
 
     let pageNum = null;
     let pageIndex = null;
-
-    // Handle Dests - named destinations
-    if (!dest) {
-      const destsName = bookmark.get(PDFName.of('Dests'));
-      if (destsName) {
-        const names = catalog.get(PDFName.of('Names'));
-        if (names) {
-          const dests = names.get(PDFName.of('Dests'));
-          if (dests) {
-            // Look up the named destination
-            // This is simplified - full implementation would need to parse the name tree
-          }
-        }
-      }
-    }
+    let pageRef = null;
 
     // Handle GoTo action
     if (!dest) {
@@ -496,33 +661,14 @@ async function getBookmarks(filePath) {
     }
 
     if (dest) {
-      let pageRef = null;
+      pageRef = resolveDestPageRef(dest, pdfDoc, catalog);
+    }
 
-      if (Array.isArray(dest)) {
-        pageRef = dest[0];
-      } else if (typeof dest === 'object' && dest !== null) {
-        // Named destination - try to resolve it
-        const destName = dest.toString();
-        // Try to get from catalog's Dests
-        const dests = catalog.get(PDFName.of('Dests'));
-        if (dests && typeof dests.get === 'function') {
-          const namedDest = dests.get(destName);
-          if (namedDest && Array.isArray(namedDest)) {
-            pageRef = namedDest[0];
-          }
-        }
-      }
-
-      if (pageRef && typeof pageRef === 'object' && 'gen' in pageRef) {
-        try {
-          const pageIndex_ = pdfDoc.getPageIndex(pageRef);
-          if (pageIndex_ >= 0) {
-            pageIndex = pageIndex_;
-            pageNum = pageIndex + 1;
-          }
-        } catch (e) {
-          // ignore
-        }
+    if (pageRef) {
+      const found = findPageIndex(pageRef, pdfDoc);
+      if (found >= 0) {
+        pageIndex = found;
+        pageNum = found + 1;
       }
     }
 
@@ -691,5 +837,6 @@ module.exports = {
   deletePages,
   protectPDF,
   getBookmarks,
-  addBookmarks
+  addBookmarks,
+  _resetMergePromise
 };

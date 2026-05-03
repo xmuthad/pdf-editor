@@ -60,21 +60,33 @@ test.describe('PDF 操作流程 E2E 测试', () => {
 
   test.describe('帮助和设置模态框', () => {
     test('帮助模态框可以打开和关闭', async () => {
-      await window.locator('[data-action="help"]').click();
+      const helpMenu = window.locator('[data-action="help"]');
+      await helpMenu.hover();
+      const openHelpItem = window.locator('[data-action="openHelpModal"]');
+      await expect(openHelpItem).toBeVisible();
+      await openHelpItem.click();
       await expect(window.locator('#helpModal')).toHaveClass(/active/);
       await window.locator('#closeHelpModalBtn').click();
       await expect(window.locator('#helpModal')).not.toHaveClass(/active/);
     });
 
     test('设置模态框可以打开和关闭', async () => {
-      await window.locator('[data-action="settings"]').click();
+      const settingsMenu = window.locator('[data-action="settings"]');
+      await settingsMenu.hover();
+      const openSettingsItem = window.locator('[data-action="openSettingsModal"]');
+      await expect(openSettingsItem).toBeVisible();
+      await openSettingsItem.click();
       await expect(window.locator('#settingsModal')).toHaveClass(/active/);
       await window.locator('#closeSettingsModalBtn').click();
       await expect(window.locator('#settingsModal')).not.toHaveClass(/active/);
     });
 
     test('设置复选框可交互', async () => {
-      await window.locator('[data-action="settings"]').click();
+      const settingsMenu = window.locator('[data-action="settings"]');
+      await settingsMenu.hover();
+      const openSettingsItem = window.locator('[data-action="openSettingsModal"]');
+      await expect(openSettingsItem).toBeVisible();
+      await openSettingsItem.click();
       await expect(window.locator('#settingsModal')).toHaveClass(/active/);
 
       const checkbox = window.locator('#openLastFileCheckbox');

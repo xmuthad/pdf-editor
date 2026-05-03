@@ -1,7 +1,7 @@
 // PDF Editor Renderer Process
 
 // Debug mode - set to true to enable detailed logging
-window.DEBUG_MODE = true;
+window.DEBUG_MODE = window.location.hostname === 'localhost' || window.location.search.includes('debug=true');
 
 // =============================================================================
 // Configuration - Cache sizes and performance settings
@@ -73,19 +73,6 @@ function debugLog(...args) {
   }
 }
 
-function debugWarn(...args) {
-  if (isDebugMode) {
-    console.warn(...args);
-  }
-}
-
-function debugError(...args) {
-  if (isDebugMode) {
-    console.error(...args);
-  }
-}
-
-// Escape HTML to prevent XSS
 function escapeHtml(text) {
   const div = document.createElement('div');
   div.textContent = text;
@@ -94,7 +81,6 @@ function escapeHtml(text) {
 
 // State
 let selectedFiles = [];
-let currentOperation = null;
 let pdfEditor = null;
 let currentPdfPath = null;
 let currentPage = 1;
@@ -227,10 +213,25 @@ const pdfPageCache = new Map(); // key: `${filePath}_${pageNum}`
 let backgroundPageLoader = null;
 
 // Expose cache for pdf-editor.js to use for preloading
+const backgroundCacheMap = new Map();
+
 window.pdfDocumentCacheForEditor = pdfDocumentCache;
-window.pdfPageCache = pdfPageCache; // Expose page cache
-window.clearPDFPageCache = clearPDFPageCache; // Expose cleanup function
-window.clearPDFDocumentCache = clearPDFPageCache; // Alias for compatibility
+window.pdfPageCache = pdfPageCache;
+function clearAllCaches(filePath) {
+  clearPDFPageCache(filePath);
+  backgroundCacheMap.clear();
+}
+
+window.clearPDFPageCache = clearPDFPageCache;
+window.clearPDFDocumentCache = clearAllCaches;
+window.getBackgroundCache = (canvasId) => backgroundCacheMap.get(canvasId);
+window.setBackgroundCache = (canvasId, imageData) => {
+  if (backgroundCacheMap.size > 50) {
+    const firstKey = backgroundCacheMap.keys().next().value;
+    backgroundCacheMap.delete(firstKey);
+  }
+  backgroundCacheMap.set(canvasId, imageData);
+};
 
 // Clear PDF document cache (called when opening new file)
 function clearPDFPageCache(filePath) {
@@ -301,6 +302,29 @@ async function getCachedFileData(filePath) {
   return fileData;
 }
 
+async function getOrLoadPdfDocument(filePath) {
+  let pdf = pdfDocumentCache.get(filePath);
+  if (!pdf) {
+    const fileData = await getCachedFileData(filePath);
+    const lib = await initPDFJS();
+    const typedArray = new Uint8Array(fileData);
+    pdf = await lib.getDocument({
+      data: typedArray,
+      workerSrc: window.pdfWorkerSrc,
+      disableFontFace: true,
+      disableRange: true,
+      disableStream: true,
+      disableAutoFetch: true
+    }).promise;
+    if (pdfDocumentCache.size >= CACHE_CONFIG.MAX_PDF_DOC_CACHE_SIZE) {
+      const firstKey = pdfDocumentCache.keys().next().value;
+      pdfDocumentCache.delete(firstKey);
+    }
+    pdfDocumentCache.set(filePath, pdf);
+  }
+  return pdf;
+}
+
 window.renderPDFPage = async (filePath, pageNum, canvas, scale) => {
   const renderStartTime = performance.now();
 
@@ -311,35 +335,10 @@ window.renderPDFPage = async (filePath, pageNum, canvas, scale) => {
       throw new Error('PDF.js not loaded');
     }
 
-    // Use cached file data or read new
     const fileData = await getCachedFileData(filePath);
     const typedArray = new Uint8Array(fileData);
 
-    // Use cached PDF document or create new one
-    let pdf = pdfDocumentCache.get(filePath);
-    if (!pdf) {
-      // Load with worker to avoid blocking main thread
-      pdf = await lib.getDocument({
-        data: typedArray,
-        workerSrc: window.pdfWorkerSrc,
-        // Disable features for faster loading and less memory
-        disableFontFace: true,
-        disableRange: true,
-        disableStream: true,
-        disableAutoFetch: true,
-        disableCreateObjectURL: true,
-        useSystemFonts: true,
-        cMapUrl: null,
-        cMapPacked: false
-      }).promise;
-
-      // Cache the document
-      if (pdfDocumentCache.size >= CACHE_CONFIG.MAX_PDF_DOC_CACHE_SIZE) {
-        const firstKey = pdfDocumentCache.keys().next().value;
-        pdfDocumentCache.delete(firstKey);
-      }
-      pdfDocumentCache.set(filePath, pdf);
-    }
+    const pdf = await getOrLoadPdfDocument(filePath);
 
     // Try to get page from cache first
     const cacheKey = `${filePath}_${pageNum}`;
@@ -410,7 +409,6 @@ window.renderPDFPage = async (filePath, pageNum, canvas, scale) => {
 let welcomeOpenBtn;
 let openFileBtn;
 let uploadPlaceholder;
-let thumbnailContainer;
 let thumbnailList;
 let welcomePanel;
 let toolProperties;
@@ -420,7 +418,6 @@ let actionsSection;
 let pageManagementSection;
 let exportSection;
 let securitySection;
-let canvasWrapper;
 let pagesContainer;  // Multi-page container for continuous scroll
 let statusMessage;
 let pageStatus;
@@ -434,7 +431,6 @@ function initEventListeners() {
   welcomeOpenBtn = document.getElementById('welcomeOpenBtn');
   openFileBtn = document.getElementById('openFileBtn');
   uploadPlaceholder = document.getElementById('uploadPlaceholder');
-  thumbnailContainer = document.getElementById('thumbnailContainer');
   thumbnailList = document.getElementById('thumbnailList');
   welcomePanel = document.getElementById('welcomePanel');
   toolProperties = document.getElementById('toolProperties');
@@ -444,7 +440,6 @@ function initEventListeners() {
   pageManagementSection = document.getElementById('pageManagementSection');
   exportSection = document.getElementById('exportSection');
   securitySection = document.getElementById('securitySection');
-  canvasWrapper = document.getElementById('canvasWrapper');
   pagesContainer = document.getElementById('pagesContainer');
   statusMessage = document.getElementById('statusMessage');
   pageStatus = document.getElementById('pageStatus');
@@ -510,6 +505,7 @@ function initEventListeners() {
 
     // Help menu (container only)
     'help': () => {}, // do nothing, it's a container
+    'openHelpModal': () => { if (modals.help) modals.help.open(); },
     'showShortcuts': showShortcutsModal,
     'about': showAboutModal
   };
@@ -991,6 +987,24 @@ async function loadOutline() {
   }
 }
 
+async function loadBookmarks() {
+  if (!currentPdfPath) return;
+
+  try {
+    const pdfBookmarks = await window.pdfAPI.getBookmarks(currentPdfPath);
+    if (pdfBookmarks && pdfBookmarks.length > 0) {
+      currentBookmarks = pdfBookmarks;
+    } else {
+      currentBookmarks = [];
+    }
+    renderBookmarks();
+  } catch (error) {
+    console.error('Failed to load bookmarks:', error);
+    currentBookmarks = [];
+    renderBookmarks();
+  }
+}
+
 function renderOutline() {
   const outlineList = document.getElementById('outlineList');
   const outlineInfo = document.getElementById('outlineInfo');
@@ -1006,7 +1020,7 @@ function renderOutline() {
   }
 
   outlineList.innerHTML = currentOutline.map((item, index) => `
-    <div class="outline-item ${item.level > 0 ? 'outline-item-child' : ''}"
+    <div class="outline-item ${item.level > 0 ? 'outline-item-child' : ''} ${item.page ? 'outline-item-linkable' : 'outline-item-nolink'}"
          data-index="${index}"
          style="padding-left: ${12 + (item.level || 0) * 16}px">
       <span class="outline-title" title="${escapeHtml(item.title)}">${escapeHtml(item.title)}</span>
@@ -1015,7 +1029,8 @@ function renderOutline() {
   `).join('');
 
   if (outlineInfo) {
-    outlineInfo.innerHTML = `<div class="outline-count">共 ${currentOutline.length} 个条目</div>`;
+    const withPage = currentOutline.filter(i => i.page).length;
+    outlineInfo.innerHTML = `<div class="outline-count">共 ${currentOutline.length} 个条目${withPage < currentOutline.length ? `，${withPage} 个可跳转` : ''}</div>`;
   }
 
   outlineList.querySelectorAll('.outline-item').forEach(item => {
@@ -1023,6 +1038,8 @@ function renderOutline() {
       const index = parseInt(item.dataset.index);
       const outlineItem = currentOutline[index];
       if (outlineItem && outlineItem.page) {
+        outlineList.querySelectorAll('.outline-item').forEach(el => el.classList.remove('outline-item-active'));
+        item.classList.add('outline-item-active');
         goToPage(outlineItem.page);
       }
     });
@@ -1030,17 +1047,6 @@ function renderOutline() {
 }
 
 // Bookmark functions
-async function loadBookmarks() {
-    if (!currentPdfPath) return;
-
-    try {
-      const bookmarks = await window.pdfAPI.getBookmarks(currentPdfPath);
-      currentBookmarks = bookmarks || [];
-      renderBookmarks();
-    } catch (error) {
-      console.error('Failed to load bookmarks:', error);
-    }
-  }
 
   function renderBookmarks() {
     const bookmarksList = document.getElementById('bookmarksList');
@@ -1323,9 +1329,11 @@ async function loadBookmarks() {
       item.draggable = true;
       item.dataset.index = index;
       
+      const safeFile = escapeHtml(file);
+      const safeName = escapeHtml(file.split(/[\\/]/).pop());
       item.innerHTML = `
         <span class="file-icon">📄</span>
-        <span class="file-name" title="${file}">${file.split(/[\\/]/).pop()}</span>
+        <span class="file-name" title="${safeFile}">${safeName}</span>
         <span class="remove-file" title="移除">&times;</span>
       `;
       
@@ -1519,7 +1527,7 @@ function selectTool(tool) {
   if (pdfEditor) {
     const editorTool = tool === 'select' || tool === 'hand' ? null : tool;
     pdfEditor.setTool(editorTool);
-    updateStatus(`工具：${getToolName(tool)} | pdfEditor.tool=${pdfEditor.currentTool}`);
+    updateStatus(`工具：${getToolName(tool)}`);
 
     // Show/hide debug panel for text tool
     const textDebugInfo = document.getElementById('textDebugInfo');
@@ -1527,8 +1535,8 @@ function selectTool(tool) {
     if (tool === 'text' && textDebugInfo) {
       textDebugInfo.style.display = 'block';
       textDebugContent.innerHTML = `
-        <div>工具: ${tool}</div>
-        <div>pdfEditor.tool: ${pdfEditor.currentTool}</div>
+        <div>工具: ${escapeHtml(tool)}</div>
+        <div>pdfEditor.tool: ${escapeHtml(pdfEditor.currentTool)}</div>
         <div>pdfEditor.textItems: ${pdfEditor.textItems ? pdfEditor.textItems.length : 'null'}</div>
         <div>currentPage: ${pdfEditor.currentPage}</div>
       `;
@@ -1738,29 +1746,7 @@ async function renderThumbnail(pageNum) {
 
     const canvas = thumbnailItem.querySelector('.thumbnail-canvas');
 
-    // Use cached PDF document
-    let pdf = pdfDocumentCache.get(currentPdfPath);
-
-    if (!pdf) {
-      const fileData = await getCachedFileData(currentPdfPath);
-      const lib = await initPDFJS();
-      const typedArray = new Uint8Array(fileData);
-
-      pdf = await lib.getDocument({
-        data: typedArray,
-        workerSrc: window.pdfWorkerSrc,
-        disableFontFace: true,
-        disableRange: true,
-        disableStream: true,
-        disableAutoFetch: true
-      }).promise;
-
-      if (pdfDocumentCache.size >= CACHE_CONFIG.MAX_PDF_DOC_CACHE_SIZE) {
-        const firstKey = pdfDocumentCache.keys().next().value;
-        pdfDocumentCache.delete(firstKey);
-      }
-      pdfDocumentCache.set(currentPdfPath, pdf);
-    }
+    const pdf = await getOrLoadPdfDocument(currentPdfPath);
 
     const page = await pdf.getPage(pageNum);
     // Use very small scale for thumbnails (performance optimization)
@@ -1790,27 +1776,7 @@ async function renderThumbnail(pageNum) {
 
 // Render a batch of thumbnails (fallback for older browsers)
 async function renderThumbnailBatch(startPage, endPage) {
-  const fileData = await getCachedFileData(currentPdfPath);
-  const lib = await initPDFJS();
-  const typedArray = new Uint8Array(fileData);
-
-  // Use cached PDF document
-  let pdf = pdfDocumentCache.get(currentPdfPath);
-  if (!pdf) {
-    pdf = await lib.getDocument({
-      data: typedArray,
-      workerSrc: window.pdfWorkerSrc,
-      disableFontFace: true,
-      disableRange: true,
-      disableStream: true,
-      disableAutoFetch: true
-    }).promise;
-    if (pdfDocumentCache.size >= CACHE_CONFIG.MAX_PDF_DOC_CACHE_SIZE) {
-      const firstKey = pdfDocumentCache.keys().next().value;
-      pdfDocumentCache.delete(firstKey);
-    }
-    pdfDocumentCache.set(currentPdfPath, pdf);
-  }
+  const pdf = await getOrLoadPdfDocument(currentPdfPath);
 
   // Render thumbnails with delay to avoid blocking UI
   for (let i = startPage; i <= endPage; i++) {
@@ -1999,16 +1965,10 @@ async function renderPageCanvas(pageNum) {
   // Render text layer for text selection
   await renderTextLayer(pageNum, canvas, textLayer);
 
-  // Cache background for this page (for smooth editing)
   const ctx = canvas.getContext('2d', { alpha: false });
   const backgroundCache = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
-  // Store background cache on the canvas element itself
-  canvas.dataset.backgroundCache = JSON.stringify({
-    width: canvas.width,
-    height: canvas.height,
-    data: Array.from(backgroundCache.data)
-  });
+  window.setBackgroundCache(canvas.id, backgroundCache);
 
   // Update dimensions for first page
   if (pageNum === 1 && pdfEditor) {
@@ -2021,22 +1981,7 @@ async function renderPageCanvas(pageNum) {
 // Render text layer for text selection
 async function renderTextLayer(pageNum, canvas, textLayer) {
   try {
-    const lib = await initPDFJS();
-    const fileData = await getCachedFileData(currentPdfPath);
-    const typedArray = new Uint8Array(fileData);
-
-    let pdf = pdfDocumentCache.get(currentPdfPath);
-    if (!pdf) {
-      pdf = await lib.getDocument({
-        data: typedArray,
-        workerSrc: window.pdfWorkerSrc,
-        disableFontFace: true,
-        disableRange: true,
-        disableStream: true,
-        disableAutoFetch: true
-      }).promise;
-      pdfDocumentCache.set(currentPdfPath, pdf);
-    }
+    const pdf = await getOrLoadPdfDocument(currentPdfPath);
 
     const page = await pdf.getPage(pageNum);
     const scale = pdfEditor ? pdfEditor.scale : 1.0;
@@ -2130,37 +2075,32 @@ function setupMultiPageEditing() {
     canvas.addEventListener('mouseleave', (e) => handlePageMouseLeave(e, pageNum));
   });
 
-  // Setup text layer event handling - allow text selection without interfering with editing
-  document.querySelectorAll('.text-layer').forEach((textLayer) => {
-    const pageNum = parseInt(textLayer.id.split('_')[1]);
+  // Setup text layer event handling using event delegation on pagesContainer
+  const pagesContainer = document.getElementById('pagesContainer');
+  if (pagesContainer && !pagesContainer.dataset.textEventsDelegated) {
+    pagesContainer.dataset.textEventsDelegated = 'true';
 
-    // Skip if already initialized
-    if (textLayer.dataset.eventsInitialized === 'true') {
-      return;
-    }
-    textLayer.dataset.eventsInitialized = 'true';
-
-    // Allow text selection but prevent interference with canvas editing
-    textLayer.addEventListener('mousedown', (e) => {
-      // If using text or select tool, let the text layer handle selection
+    pagesContainer.addEventListener('mousedown', (e) => {
+      const textLayer = e.target.closest('.text-layer');
+      if (!textLayer) return;
       if (currentTool === 'text' || currentTool === 'select') {
-        // Don't prevent default - allow text selection
-        // But stop propagation to prevent canvas mousedown
         if (e.target.classList.contains('text-layer-span')) {
           e.stopPropagation();
         }
       }
     });
 
-    // Handle double-click to select word
-    textLayer.addEventListener('dblclick', (e) => {
+    pagesContainer.addEventListener('dblclick', (e) => {
+      const textLayer = e.target.closest('.text-layer');
+      if (!textLayer) return;
       if (currentTool === 'text' || currentTool === 'select') {
         e.stopPropagation();
       }
     });
 
-    // Handle copy event for text selection
-    textLayer.addEventListener('copy', (e) => {
+    pagesContainer.addEventListener('copy', (e) => {
+      const textLayer = e.target.closest('.text-layer');
+      if (!textLayer) return;
       const selection = window.getSelection();
       if (selection && selection.toString()) {
         e.clipboardData.setData('text/plain', selection.toString());
@@ -2168,7 +2108,7 @@ function setupMultiPageEditing() {
         updateStatus('文本已复制到剪贴板');
       }
     });
-  });
+  }
 }
 
 // Page-specific mouse event handlers
@@ -2192,17 +2132,9 @@ function handlePageMouseDown(e, pageNum) {
   updateTextDebugPanel(`点击事件 | page=${pageNum} | tool=${currentTool} | pdfTool=${pdfEditor.currentTool} | textItems=${pdfEditor.textItems ? pdfEditor.textItems.length : 0}`);
 
   // Load background cache from canvas dataset if available
-  if (e.target.dataset.backgroundCache) {
-    try {
-      const cached = JSON.parse(e.target.dataset.backgroundCache);
-      pdfEditor.backgroundCache = new ImageData(
-        new Uint8ClampedArray(cached.data),
-        cached.width,
-        cached.height
-      );
-    } catch (err) {
-      console.error('Failed to load background cache:', err);
-    }
+  const cached = window.getBackgroundCache(e.target.id);
+  if (cached) {
+    pdfEditor.backgroundCache = cached;
   }
 
   // Load text content for this page if using text tool or select tool
@@ -2231,7 +2163,7 @@ function handlePageMouseDown(e, pageNum) {
         const textStatus = pdfEditor.getTextStatus();
         updateTextDebugPanel(`文本加载完成 | items=${textStatus.itemCount} | status=${textStatus.status}`);
         if (textStatus.status === 'editable') {
-          var itemCount = textStatus.itemCount;
+          let itemCount = textStatus.itemCount;
           updatePdfStatus('editable', itemCount + ' 个文本项');
         } else if (textStatus.status === 'empty') {
           updatePdfStatus('scanned', '此页面无文本内容');
@@ -2250,11 +2182,11 @@ function updateTextDebugPanel(message) {
   const textDebugContent = document.getElementById('textDebugContent');
   if (textDebugContent) {
     textDebugContent.innerHTML = `
-      <div>工具: ${currentTool}</div>
-      <div>pdfEditor.tool: ${pdfEditor ? pdfEditor.currentTool : 'N/A'}</div>
+      <div>工具: ${escapeHtml(currentTool)}</div>
+      <div>pdfEditor.tool: ${pdfEditor ? escapeHtml(pdfEditor.currentTool) : 'N/A'}</div>
       <div>pdfEditor.textItems: ${pdfEditor && pdfEditor.textItems ? pdfEditor.textItems.length : 'null'}</div>
       <div>currentPage: ${pdfEditor ? pdfEditor.currentPage : 'N/A'}</div>
-      <div style="margin-top: 5px; color: #856404;">${message}</div>
+      <div style="margin-top: 5px; color: #856404;">${escapeHtml(message || '')}</div>
     `;
   }
 }
@@ -2320,7 +2252,7 @@ async function initEditor() {
         await pdfEditor.loadTextForPage(1);
         const textStatus = pdfEditor.getTextStatus();
         if (textStatus.status === 'editable') {
-          var cnt = textStatus.itemCount; updatePdfStatus("editable", cnt + " 个文本项");
+          let cnt = textStatus.itemCount; updatePdfStatus("editable", cnt + " 个文本项");
         } else if (textStatus.status === 'empty') {
           updatePdfStatus('scanned', '此页面无文本内容');
         }
@@ -2433,7 +2365,11 @@ function startBackgroundPageLoading() {
             const lib = await initPDFJS();
             const pdf = pdfDocumentCache.get(currentPdfPath);
             if (pdf) {
-              await pdf.getPage(pageNum);
+              const page = await pdf.getPage(pageNum);
+              if (pdfPageCache.size >= CACHE_CONFIG.MAX_PAGE_CACHE_SIZE) {
+                cleanupCache();
+              }
+              pdfPageCache.set(cacheKey, page);
               loadedPages.add(pageNum);
               if (DEBUG_MODE) console.log('[BACKGROUND] Loaded page ' + pageNum);
             }
@@ -2616,14 +2552,12 @@ function setZoom(level) {
 
     // Re-render at higher resolution if zoom > 100%
     if (currentZoom > 100) {
-      // Debounce re-render to avoid rapid re-renders during zoom
       if (window.zoomRenderTimeout) {
         clearTimeout(window.zoomRenderTimeout);
       }
       window.zoomRenderTimeout = setTimeout(() => {
-        const newScale = (currentZoom / 100) * pdfEditor.scale;
+        const newScale = currentZoom / 100;
         if (newScale > pdfEditor.scale) {
-          // Re-render all pages at higher resolution
           pdfEditor.scale = newScale;
           renderAllPages();
         }
@@ -2706,7 +2640,7 @@ async function handleSavePDF() {
     if (window.pdfAPI) {
       const result = await window.pdfAPI.saveDialog('edited.pdf');
       if (!result.canceled && result.filePath) {
-        await window.pdfAPI.writeFile(result.filePath, modifiedBuffer);
+        await window.pdfAPI.writeFile(result.filePath, Array.from(modifiedBuffer));
         updateStatus(`保存成功：${result.filePath}`);
       }
     } else {
@@ -2733,6 +2667,24 @@ async function handleMerge() {
 }
 
 // Handle new file - close current and prompt to open new
+function clearAllPendingTimers() {
+  if (window.textLayerRenderTimeout) {
+    clearTimeout(window.textLayerRenderTimeout);
+    window.textLayerRenderTimeout = null;
+  }
+  if (window.zoomRenderTimeout) {
+    clearTimeout(window.zoomRenderTimeout);
+    window.zoomRenderTimeout = null;
+  }
+}
+
+function cleanupObservers() {
+  if (thumbnailObserver) {
+    thumbnailObserver.disconnect();
+    thumbnailObserver = null;
+  }
+}
+
 async function handleNewFile() {
   if (pdfEditor && currentPdfPath) {
     const operations = pdfEditor.getOperations();
@@ -2742,7 +2694,12 @@ async function handleNewFile() {
       }
     }
   }
-  
+
+  clearAllPendingTimers();
+  cleanupObservers();
+  renderedThumbnails.clear();
+  backgroundCacheMap.clear();
+
   if (pdfEditor) {
     pdfEditor.cleanup();
   }
@@ -2750,7 +2707,7 @@ async function handleNewFile() {
   selectedFiles = [];
   totalPages = 0;
   currentPage = 1;
-  
+
   const pagesContainer = document.getElementById('pagesContainer');
   if (pagesContainer) pagesContainer.innerHTML = '';
   const thumbnailList = document.getElementById('thumbnailList');
@@ -2758,10 +2715,10 @@ async function handleNewFile() {
     thumbnailList.innerHTML = '';
     thumbnailList.style.display = 'none';
   }
-  
+
   const welcomePanel = document.getElementById('welcomePanel');
   if (welcomePanel) welcomePanel.style.display = 'flex';
-  
+
   updateStatus('准备就绪');
 }
 
@@ -2784,7 +2741,7 @@ async function handleSaveAs() {
       const defaultName = currentPdfPath ? currentPdfPath.split(/[\\/]/).pop().replace('.pdf', '_edited.pdf') : 'edited.pdf';
       const result = await window.pdfAPI.saveDialog(defaultName);
       if (!result.canceled && result.filePath) {
-        await window.pdfAPI.writeFile(result.filePath, modifiedBuffer);
+        await window.pdfAPI.writeFile(result.filePath, Array.from(modifiedBuffer));
         updateStatus('另存成功：' + result.filePath);
       }
     } else {
@@ -2821,12 +2778,7 @@ function handleZoomOut() {
 }
 
 function handleZoomReset() {
-  currentZoom = 100;
-  updateZoomUI();
-  if (pdfEditor) {
-    pdfEditor.scale = 1.0;
-    renderAllPages();
-  }
+  setZoom(100);
   updateStatus('缩放已重置为 100%');
 }
 
@@ -3005,7 +2957,7 @@ async function performDeletePages() {
     } else {
       const result = await window.pdfAPI.saveDialog('modified.pdf');
       if (!result.canceled && result.filePath) {
-        await window.pdfAPI.writeFile(result.filePath, deletedBuffer);
+        await window.pdfAPI.writeFile(result.filePath, Array.from(deletedBuffer));
         updateStatus(`已删除 ${pagesToDelete.length} 页并另存为`);
         closeDeletePageModalFunc();
         clearPageSelection();
@@ -3143,7 +3095,7 @@ async function performProtect() {
       return;
     }
 
-    const ownerPassword = document.getElementById('ownerPassword').value || null;
+    const ownerPassword = document.getElementById('ownerPassword').value || userPassword;
     const permissions = {
       printing: document.getElementById('allowPrinting').checked ? 'highResolution' : 'none',
       modifying: document.getElementById('allowModifying').checked,
@@ -3157,7 +3109,7 @@ async function performProtect() {
     // Save the protected file
     const result = await window.pdfAPI.saveDialog('protected.pdf');
     if (!result.canceled && result.filePath) {
-      await window.pdfAPI.writeFile(result.filePath, protectedBuffer);
+      await window.pdfAPI.writeFile(result.filePath, Array.from(protectedBuffer));
       updateStatus(`PDF 已加密保护，已保存到：${result.filePath}`);
       closeProtectModalFunc();
     }
@@ -3263,11 +3215,7 @@ function updatePdfStatus(status, details) {
 
 // Initialize on load
 document.addEventListener('DOMContentLoaded', async () => {
-  console.log('DOM已加载，开始初始化事件...');
-  
-  // 给一个小的延迟确保DOM完全渲染
   setTimeout(() => {
-    console.log('延迟后绑定菜单事件');
     initEventListeners();
   }, 100);
   
@@ -3291,7 +3239,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
       }
     } catch (error) {
-      console.log('Last file no longer exists:', appSettings.lastFilePath);
+      if (DEBUG_MODE) console.log('Last file no longer exists:', appSettings.lastFilePath);
       await updateSetting('lastFilePath', '');
     }
   }
