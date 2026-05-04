@@ -1,6 +1,6 @@
 const { app, BrowserWindow, ipcMain, dialog, nativeImage } = require('electron');
 const path = require('path');
-const { mergePDFs, splitPDF, addWatermark, loadPDF, applyEdits, rotatePDF, deletePages, protectPDF, getBookmarks, addBookmarks, movePage, addPageNumbers, setPDFMetadata } = require('./pdf-utils');
+const { mergePDFs, splitPDF, addWatermark, loadPDF, applyEdits, rotatePDF, deletePages, protectPDF, getBookmarks, addBookmarks, movePage, addPageNumbers, setPDFMetadata, insertPages, insertBlankPage } = require('./pdf-utils');
 const OCREngine = require('./ocr-engine');
 const { validateString, validateArray, validateNumber, validateBuffer, validateObject } = require('./validation');
 const fs = require('fs').promises;
@@ -288,6 +288,22 @@ ipcMain.handle('pdf:setMetadata', safeIpcHandler('pdf:setMetadata', (_, filePath
   validateFilePath(filePath);
   validateObject(metadata, 'metadata');
   return setPDFMetadata(filePath, metadata);
+}));
+
+// Insert pages from another PDF
+ipcMain.handle('pdf:insertPages', safeIpcHandler('pdf:insertPages', (_, targetPath, sourcePath, insertAfterPage, sourcePages) => {
+  validateFilePath(targetPath);
+  validateFilePath(sourcePath);
+  validateNumber(insertAfterPage, 'insertAfterPage', 0, 100000);
+  validateArray(sourcePages, 'sourcePages');
+  return insertPages(targetPath, sourcePath, insertAfterPage, sourcePages);
+}));
+
+// Insert blank page
+ipcMain.handle('pdf:insertBlankPage', safeIpcHandler('pdf:insertBlankPage', (_, filePath, insertAfterPage, width, height) => {
+  validateFilePath(filePath);
+  validateNumber(insertAfterPage, 'insertAfterPage', 0, 100000);
+  return insertBlankPage(filePath, insertAfterPage, width, height);
 }));
 
 // Settings IPC handlers

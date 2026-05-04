@@ -167,6 +167,80 @@ async function setPDFMetadata(filePath, metadata) {
   return Buffer.from(await pdfDoc.save());
 }
 
+async function insertPages(targetPath, sourcePath, insertAfterPage, sourcePages) {
+  validateString(targetPath, 'targetPath');
+  validateString(sourcePath, 'sourcePath');
+  validateNumber(insertAfterPage, 'insertAfterPage', 0, 100000);
+  validateArray(sourcePages, 'sourcePages');
+
+  let targetData, sourceData, targetDoc, sourceDoc;
+
+  try {
+    [targetData, sourceData] = await Promise.all([
+      fs.readFile(targetPath),
+      fs.readFile(sourcePath)
+    ]);
+    [targetDoc, sourceDoc] = await Promise.all([
+      PDFDocument.load(targetData),
+      PDFDocument.load(sourceData)
+    ]);
+  } catch (error) {
+    throw new Error(`Failed to read PDF files: ${error.message}`);
+  }
+
+  const targetPageCount = targetDoc.getPageCount();
+  const sourcePageCount = sourceDoc.getPageCount();
+
+  if (insertAfterPage < 0 || insertAfterPage > targetPageCount) {
+    throw new Error(`Invalid insertAfterPage: ${insertAfterPage}. Target PDF has ${targetPageCount} pages.`);
+  }
+
+  // Validate source pages
+  for (const pageNum of sourcePages) {
+    if (pageNum < 1 || pageNum > sourcePageCount) {
+      throw new Error(`Invalid source page: ${pageNum}. Source PDF has ${sourcePageCount} pages.`);
+    }
+  }
+
+  // Copy pages from source to target
+  const copiedPages = await targetDoc.copyPages(sourceDoc, sourcePages.map(p => p - 1));
+
+  // Insert pages at the specified position
+  for (let i = 0; i < copiedPages.length; i++) {
+    targetDoc.insertPage(insertAfterPage + i, copiedPages[i]);
+  }
+
+  return Buffer.from(await targetDoc.save());
+}
+
+async function insertBlankPage(filePath, insertAfterPage, width, height) {
+  validateString(filePath, 'filePath');
+  validateNumber(insertAfterPage, 'insertAfterPage', 0, 100000);
+
+  let fileData, pdfDoc;
+
+  try {
+    fileData = await fs.readFile(filePath);
+    pdfDoc = await PDFDocument.load(fileData);
+  } catch (error) {
+    throw new Error(`Failed to read PDF file: ${error.message}`);
+  }
+
+  const pageCount = pdfDoc.getPageCount();
+
+  if (insertAfterPage < 0 || insertAfterPage > pageCount) {
+    throw new Error(`Invalid insertAfterPage: ${insertAfterPage}. PDF has ${pageCount} pages.`);
+  }
+
+  // Use provided dimensions or default to A4 (595.28 x 841.89 points)
+  const pageWidth = width || 595.28;
+  const pageHeight = height || 841.89;
+
+  const blankPage = pdfDoc.insertPage(insertAfterPage, [pageWidth, pageHeight]);
+
+  return Buffer.from(await pdfDoc.save());
+}
+
 async function applyEdits(filePath, operations) {
   validateString(filePath, 'filePath');
   validateArray(operations, 'operations');
@@ -1020,5 +1094,7 @@ module.exports = {
   movePage,
   addPageNumbers,
   setPDFMetadata,
+  insertPages,
+  insertBlankPage,
   _resetMergePromise
 };

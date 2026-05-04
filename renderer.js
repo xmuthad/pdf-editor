@@ -1111,6 +1111,18 @@ async function handleThumbnailContextAction(action) {
       }
       break;
 
+    case 'insertBlankBefore':
+      await handleInsertBlankPage(pageNum - 1);
+      break;
+
+    case 'insertBlankAfter':
+      await handleInsertBlankPage(pageNum);
+      break;
+
+    case 'insertFromPdf':
+      await handleInsertFromPdf(pageNum);
+      break;
+
     case 'rotateLeft':
       await handleRotatePage(-90, [pageNum]);
       break;
@@ -3983,6 +3995,74 @@ async function handleSaveProperties() {
     console.error('Failed to save properties:', error);
     handleError(error);
     updateStatus('保存属性失败');
+  }
+}
+
+async function handleInsertBlankPage(insertAfterPage) {
+  if (!currentPdfPath) return;
+
+  try {
+    updateStatus('正在插入空白页...');
+    const result = await window.pdfAPI.insertBlankPage(currentPdfPath, insertAfterPage);
+
+    // Save back to the original file
+    await window.pdfAPI.writeFile(currentPdfPath, Array.from(result));
+    updateStatus('空白页已插入');
+
+    // Reload the PDF
+    await reloadCurrentPDF();
+
+    // Go to the new page
+    goToPage(insertAfterPage + 2);
+  } catch (error) {
+    console.error('Failed to insert blank page:', error);
+    handleError(error);
+    updateStatus('插入空白页失败');
+  }
+}
+
+async function handleInsertFromPdf(insertAfterPage) {
+  if (!currentPdfPath) return;
+
+  try {
+    // Open file picker to select source PDF
+    const result = await window.pdfAPI.pickFile();
+    if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
+      return;
+    }
+
+    const sourcePath = result.filePaths[0];
+
+    // Get source PDF info
+    const sourceInfo = await window.pdfAPI.loadPDF(sourcePath);
+    const sourcePageCount = sourceInfo.pageCount;
+
+    if (sourcePageCount === 0) {
+      alert('源 PDF 文件没有页面');
+      return;
+    }
+
+    // For simplicity, insert all pages from source PDF
+    // In a more advanced version, we could show a dialog to select specific pages
+    const sourcePages = Array.from({ length: sourcePageCount }, (_, i) => i + 1);
+
+    updateStatus(`正在从 ${sourcePath.split('/').pop()} 插入 ${sourcePageCount} 页...`);
+
+    const pdfResult = await window.pdfAPI.insertPages(currentPdfPath, sourcePath, insertAfterPage, sourcePages);
+
+    // Save back to the original file
+    await window.pdfAPI.writeFile(currentPdfPath, Array.from(pdfResult));
+    updateStatus(`已插入 ${sourcePageCount} 页`);
+
+    // Reload the PDF
+    await reloadCurrentPDF();
+
+    // Go to the first inserted page
+    goToPage(insertAfterPage + 2);
+  } catch (error) {
+    console.error('Failed to insert pages from PDF:', error);
+    handleError(error);
+    updateStatus('插入页面失败');
   }
 }
 
