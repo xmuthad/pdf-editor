@@ -1,6 +1,6 @@
 const { app, BrowserWindow, ipcMain, dialog, nativeImage } = require('electron');
 const path = require('path');
-const { mergePDFs, splitPDF, addWatermark, loadPDF, applyEdits, rotatePDF, deletePages, protectPDF, getBookmarks, addBookmarks, movePage, addPageNumbers } = require('./pdf-utils');
+const { mergePDFs, splitPDF, addWatermark, loadPDF, applyEdits, rotatePDF, deletePages, protectPDF, getBookmarks, addBookmarks, movePage, addPageNumbers, setPDFMetadata } = require('./pdf-utils');
 const OCREngine = require('./ocr-engine');
 const { validateString, validateArray, validateNumber, validateBuffer, validateObject } = require('./validation');
 const fs = require('fs').promises;
@@ -281,6 +281,13 @@ ipcMain.handle('pdf:addPageNumbers', safeIpcHandler('pdf:addPageNumbers', (_, fi
   validateFilePath(filePath);
   if (options !== undefined) validateObject(options, 'options');
   return addPageNumbers(filePath, options);
+}));
+
+// Set PDF metadata
+ipcMain.handle('pdf:setMetadata', safeIpcHandler('pdf:setMetadata', (_, filePath, metadata) => {
+  validateFilePath(filePath);
+  validateObject(metadata, 'metadata');
+  return setPDFMetadata(filePath, metadata);
 }));
 
 // Settings IPC handlers

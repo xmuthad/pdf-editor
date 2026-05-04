@@ -918,6 +918,10 @@ function initEventListeners() {
   if (quickWatermarkBtn) quickWatermarkBtn.addEventListener('click', handleWatermark);
   if (quickPageNumbersBtn) quickPageNumbersBtn.addEventListener('click', openPageNumbersModal);
 
+  // PDF Properties
+  const savePropertiesBtn = document.getElementById('savePropertiesBtn');
+  if (savePropertiesBtn) savePropertiesBtn.addEventListener('click', handleSaveProperties);
+
   // Select image button - use native file picker
   const selectImageBtn = document.getElementById('selectImageBtn');
   if (selectImageBtn) {
@@ -1113,6 +1117,16 @@ async function handleThumbnailContextAction(action) {
 
     case 'rotateRight':
       await handleRotatePage(90, [pageNum]);
+      break;
+
+    case 'rotateSelectedLeft':
+      const pagesToRotateLeft = selectedPages.length > 0 ? selectedPages : [pageNum];
+      await handleRotatePage(-90, pagesToRotateLeft);
+      break;
+
+    case 'rotateSelectedRight':
+      const pagesToRotateRight = selectedPages.length > 0 ? selectedPages : [pageNum];
+      await handleRotatePage(90, pagesToRotateRight);
       break;
 
     case 'extract':
@@ -2333,6 +2347,11 @@ async function handleSelectedFiles(files) {
     if (thumbnailList) thumbnailList.style.display = 'flex';
     if (welcomePanel) welcomePanel.style.display = 'none';
     if (quickActions) quickActions.style.display = 'flex';
+
+    // Show and load PDF properties
+    const pdfProperties = document.getElementById('pdfProperties');
+    if (pdfProperties) pdfProperties.style.display = 'block';
+    await loadPDFProperties();
 
     // Initialize editor
     await initEditor();
@@ -3637,19 +3656,31 @@ async function performWatermark() {
 }
 
 // Rotate page handler
-async function handleRotatePage(degrees) {
+async function handleRotatePage(degrees, pageNumbers = null) {
   try {
     if (!currentPdfPath) {
       updateStatus('请先打开 PDF 文件');
       return;
     }
 
-    updateStatus('正在旋转页面...');
-    const rotatedBuffer = await window.pdfAPI.rotate(currentPdfPath, [currentPage], degrees);
+    // Determine which pages to rotate
+    let pagesToRotate;
+    if (pageNumbers) {
+      pagesToRotate = pageNumbers;
+    } else if (selectedPages.size > 0) {
+      pagesToRotate = Array.from(selectedPages).sort((a, b) => a - b);
+    } else {
+      pagesToRotate = [currentPage];
+    }
+
+    const pageCount = pagesToRotate.length;
+    updateStatus(`正在旋转 ${pageCount} 个页面...`);
+    
+    const rotatedBuffer = await window.pdfAPI.rotate(currentPdfPath, pagesToRotate, degrees);
 
     // Save back to original file
     await window.pdfAPI.writeFile(currentPdfPath, rotatedBuffer);
-    updateStatus(`页面已旋转 ${degrees}°`);
+    updateStatus(`已旋转 ${pageCount} 个页面 ${degrees}°`);
 
     // Reload to show changes
     await reloadCurrentPDF();
@@ -3896,6 +3927,62 @@ async function performAddPageNumbers() {
     }
   } catch (error) {
     handleError(error);
+  }
+}
+
+async function loadPDFProperties() {
+  if (!currentPdfPath) return;
+
+  try {
+    const pdfInfo = await window.pdfAPI.loadPDF(currentPdfPath);
+
+    const titleInput = document.getElementById('pdfTitle');
+    const authorInput = document.getElementById('pdfAuthor');
+    const subjectInput = document.getElementById('pdfSubject');
+    const keywordsInput = document.getElementById('pdfKeywords');
+    const creatorInput = document.getElementById('pdfCreator');
+    const producerInput = document.getElementById('pdfProducer');
+
+    if (titleInput) titleInput.value = pdfInfo.title || '';
+    if (authorInput) authorInput.value = pdfInfo.author || '';
+    if (subjectInput) subjectInput.value = pdfInfo.subject || '';
+    if (keywordsInput) keywordsInput.value = pdfInfo.keywords || '';
+    if (creatorInput) creatorInput.value = pdfInfo.creator || '';
+    if (producerInput) producerInput.value = pdfInfo.producer || '';
+  } catch (error) {
+    console.error('Failed to load PDF properties:', error);
+  }
+}
+
+async function handleSaveProperties() {
+  if (!currentPdfPath) {
+    alert('请先打开 PDF 文件');
+    return;
+  }
+
+  try {
+    const metadata = {
+      title: document.getElementById('pdfTitle')?.value || '',
+      author: document.getElementById('pdfAuthor')?.value || '',
+      subject: document.getElementById('pdfSubject')?.value || '',
+      keywords: document.getElementById('pdfKeywords')?.value || '',
+      creator: document.getElementById('pdfCreator')?.value || '',
+      modificationDate: new Date()
+    };
+
+    updateStatus('正在保存属性...');
+    const result = await window.pdfAPI.setMetadata(currentPdfPath, metadata);
+
+    // Save back to the original file
+    await window.pdfAPI.writeFile(currentPdfPath, Array.from(result));
+    updateStatus('PDF 属性已保存');
+
+    // Reload properties
+    await loadPDFProperties();
+  } catch (error) {
+    console.error('Failed to save properties:', error);
+    handleError(error);
+    updateStatus('保存属性失败');
   }
 }
 

@@ -398,6 +398,36 @@
             <button class="action-btn" id="quickWatermarkBtn">添加水印</button>
             <button class="action-btn" id="quickPageNumbersBtn">添加页码</button>
           </div>
+
+          <!-- PDF Properties (shown when file loaded) -->
+          <div class="pdf-properties" id="pdfProperties" style="display: none;">
+            <h4 class="property-title">PDF 属性</h4>
+            <div class="property-group">
+              <label for="pdfTitle">标题</label>
+              <input type="text" id="pdfTitle" class="form-input" placeholder="无标题" />
+            </div>
+            <div class="property-group">
+              <label for="pdfAuthor">作者</label>
+              <input type="text" id="pdfAuthor" class="form-input" placeholder="未知" />
+            </div>
+            <div class="property-group">
+              <label for="pdfSubject">主题</label>
+              <input type="text" id="pdfSubject" class="form-input" placeholder="无主题" />
+            </div>
+            <div class="property-group">
+              <label for="pdfKeywords">关键词</label>
+              <input type="text" id="pdfKeywords" class="form-input" placeholder="多个关键词用逗号分隔" />
+            </div>
+            <div class="property-group">
+              <label for="pdfCreator">创建者</label>
+              <input type="text" id="pdfCreator" class="form-input" placeholder="未知" readonly />
+            </div>
+            <div class="property-group">
+              <label for="pdfProducer">生成器</label>
+              <input type="text" id="pdfProducer" class="form-input" placeholder="未知" readonly />
+            </div>
+            <button class="action-btn" id="savePropertiesBtn">保存属性</button>
+          </div>
         </div>
       </div>
     </div>
@@ -766,6 +796,8 @@
     <div class="context-menu-divider"></div>
     <div class="context-menu-item" data-action="rotateLeft">向左旋转 90°</div>
     <div class="context-menu-item" data-action="rotateRight">向右旋转 90°</div>
+    <div class="context-menu-item" data-action="rotateSelectedLeft">向左旋转选中页面</div>
+    <div class="context-menu-item" data-action="rotateSelectedRight">向右旋转选中页面</div>
     <div class="context-menu-divider"></div>
     <div class="context-menu-item" data-action="extract">提取此页</div>
     <div class="context-menu-item" data-action="extractSelected">导出选中页面</div>

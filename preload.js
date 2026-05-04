@@ -87,6 +87,11 @@ contextBridge.exposeInMainWorld('pdfAPI', {
     if (options !== undefined && (typeof options !== 'object' || options === null || Array.isArray(options))) throw new Error('options must be a valid object');
     return ipcRenderer.invoke('pdf:addPageNumbers', filePath, options);
   },
+  setMetadata: (filePath, metadata) => {
+    if (typeof filePath !== 'string' || !filePath) throw new Error('filePath must be a non-empty string');
+    if (typeof metadata !== 'object' || metadata === null || Array.isArray(metadata)) throw new Error('metadata must be a valid object');
+    return ipcRenderer.invoke('pdf:setMetadata', filePath, metadata);
+  },
   getSettings: () => ipcRenderer.invoke('settings:get'),
   setSettings: (settings) => {
     if (typeof settings !== 'object' || settings === null || Array.isArray(settings)) throw new Error('settings must be a valid object');

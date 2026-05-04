@@ -117,10 +117,54 @@ async function addWatermark(filePath, text, options = {}) {
 async function loadPDF(filePath) {
   const pdfDoc = await loadPdfDocument(filePath);
 
-  return {
+  const info = {
     pageCount: pdfDoc.getPageCount(),
     filePath
   };
+
+  try {
+    const metadata = pdfDoc.getTitle();
+    if (metadata) {
+      info.title = pdfDoc.getTitle() || '';
+      info.author = pdfDoc.getAuthor() || '';
+      info.subject = pdfDoc.getSubject() || '';
+      info.keywords = pdfDoc.getKeywords() || '';
+      info.creator = pdfDoc.getCreator() || '';
+      info.producer = pdfDoc.getProducer() || '';
+      info.creationDate = pdfDoc.getCreationDate();
+      info.modificationDate = pdfDoc.getModificationDate();
+    }
+  } catch (e) {
+    // Metadata might not be available
+  }
+
+  return info;
+}
+
+async function setPDFMetadata(filePath, metadata) {
+  validateString(filePath, 'filePath');
+  validateObject(metadata, 'metadata');
+
+  let fileData;
+  let pdfDoc;
+
+  try {
+    fileData = await fs.readFile(filePath);
+    pdfDoc = await PDFDocument.load(fileData);
+  } catch (error) {
+    throw new Error(`Failed to read PDF file: ${error.message}`);
+  }
+
+  if (metadata.title !== undefined) pdfDoc.setTitle(metadata.title);
+  if (metadata.author !== undefined) pdfDoc.setAuthor(metadata.author);
+  if (metadata.subject !== undefined) pdfDoc.setSubject(metadata.subject);
+  if (metadata.keywords !== undefined) pdfDoc.setKeywords(metadata.keywords.split(',').map(k => k.trim()).filter(k => k));
+  if (metadata.creator !== undefined) pdfDoc.setCreator(metadata.creator);
+  if (metadata.modificationDate !== undefined) {
+    pdfDoc.setModificationDate(new Date());
+  }
+
+  return Buffer.from(await pdfDoc.save());
 }
 
 async function applyEdits(filePath, operations) {
@@ -975,5 +1019,6 @@ module.exports = {
   addBookmarks,
   movePage,
   addPageNumbers,
+  setPDFMetadata,
   _resetMergePromise
 };
