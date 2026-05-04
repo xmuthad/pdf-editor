@@ -265,6 +265,57 @@ body {
   text-align: center;
 }
 
+/* Search styles */
+.search-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.search-input {
+  padding: 6px 10px;
+  background: var(--bg-dark);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 12px;
+  width: 180px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.search-input:focus {
+  border-color: var(--primary-color);
+}
+
+.search-input::placeholder {
+  color: var(--text-secondary);
+}
+
+.search-btn {
+  padding: 6px 8px !important;
+  min-width: 28px !important;
+}
+
+.search-result-count {
+  font-size: 11px;
+  color: var(--text-secondary);
+  min-width: 40px;
+  text-align: center;
+}
+
+/* Search highlight */
+.search-highlight {
+  background: rgba(255, 235, 59, 0.5);
+  border: 1px solid #ffc107;
+  pointer-events: none;
+}
+
+.search-highlight.current {
+  background: rgba(255, 193, 7, 0.8);
+  border-color: #ff9800;
+}
+
 /* ============================
    Main Content Area
    ============================ */

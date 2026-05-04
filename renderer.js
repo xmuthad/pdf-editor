@@ -92,6 +92,14 @@ let currentZoom = 100;
 let currentTool = 'select';
 let pdfjsLib = null;
 
+// Search state
+let searchState = {
+  query: '',
+  results: [],
+  currentIndex: -1,
+  isSearching: false
+};
+
 function isEditableTarget(target) {
   if (!target || typeof target !== 'object') return false;
   const tagName = target.tagName ? target.tagName.toLowerCase() : '';
@@ -958,6 +966,9 @@ function initEventListeners() {
   const protectPdfBtn = document.getElementById('protectPdfBtn');
   if (protectPdfBtn) protectPdfBtn.addEventListener('click', handleProtectPDF);
 
+  // Search functionality
+  setupSearch();
+
   setupContextMenu();
 
   // Tool options
@@ -1106,8 +1117,22 @@ async function handleThumbnailContextAction(action) {
       await handleExtractPage(pageNum);
       break;
 
+    case 'extractSelected':
+      const pagesToExtract = selectedPages.length > 0 ? selectedPages : [pageNum];
+      await handleExtractSelectedPages(pagesToExtract);
+      break;
+
     case 'duplicate':
       await handleDuplicatePage(pageNum);
+      break;
+
+    case 'print':
+      await handlePrintPage(pageNum);
+      break;
+
+    case 'printSelected':
+      const pagesToPrint = selectedPages.length > 0 ? selectedPages : [pageNum];
+      await handlePrintSelectedPages(pagesToPrint);
       break;
 
     case 'delete':
@@ -1303,14 +1328,44 @@ async function handleExtractPage(pageNum) {
   try {
     updateStatus(`正在提取第 ${pageNum + 1} 页...`);
 
-    const result = await window.pdfAPI.splitPDF(currentPdfPath, [pageNum + 1]);
+    const result = await window.pdfAPI.split(currentPdfPath, [String(pageNum + 1)]);
 
-    const saveResult = await window.pdfAPI.savePDF(result);
-    if (saveResult) {
-      updateStatus(`第 ${pageNum + 1} 页已提取并保存`);
+    if (result && result.length > 0) {
+      const saveResult = await window.pdfAPI.saveDialog(`page_${pageNum + 1}.pdf`);
+      if (!saveResult.canceled && saveResult.filePath) {
+        await window.pdfAPI.writeFile(saveResult.filePath, Array.from(result[0]));
+        updateStatus(`第 ${pageNum + 1} 页已提取并保存`);
+      }
     }
   } catch (error) {
     console.error('Failed to extract page:', error);
+    handleError(error);
+  }
+}
+
+async function handleExtractSelectedPages(pageNumbers) {
+  if (!currentPdfPath || pageNumbers.length === 0) return;
+
+  try {
+    const sortedPages = [...pageNumbers].sort((a, b) => a - b);
+    const pageList = sortedPages.map(p => p + 1);
+    
+    updateStatus(`正在导出 ${pageList.length} 页...`);
+
+    // Create range string for split API
+    const rangeStr = pageList.join(',');
+    const result = await window.pdfAPI.split(currentPdfPath, [rangeStr]);
+
+    if (result && result.length > 0) {
+      const defaultName = `extracted_${pageList.length}_pages.pdf`;
+      const saveResult = await window.pdfAPI.saveDialog(defaultName);
+      if (!saveResult.canceled && saveResult.filePath) {
+        await window.pdfAPI.writeFile(saveResult.filePath, Array.from(result[0]));
+        updateStatus(`已导出 ${pageList.length} 页到 ${saveResult.filePath}`);
+      }
+    }
+  } catch (error) {
+    console.error('Failed to extract selected pages:', error);
     handleError(error);
   }
 }
@@ -1321,22 +1376,90 @@ async function handleDuplicatePage(pageNum) {
   try {
     updateStatus(`正在复制第 ${pageNum + 1} 页...`);
 
-    const pdfBytes = await window.pdfAPI.getPdfBytes(currentPdfPath);
-    const { PDFDocument } = require('pdf-lib');
-    const srcDoc = await PDFDocument.load(pdfBytes);
-    const newDoc = await PDFDocument.create();
+    // Use split to extract the page
+    const result = await window.pdfAPI.split(currentPdfPath, [String(pageNum + 1)]);
 
-    const [copiedPage] = await newDoc.copyPages(srcDoc, [pageNum]);
-    newDoc.addPage(copiedPage);
-
-    const newPdfBytes = await newDoc.save();
-
-    const saveResult = await window.pdfAPI.savePDF(Buffer.from(newPdfBytes));
-    if (saveResult) {
-      updateStatus(`第 ${pageNum + 1} 页已复制为新文件`);
+    if (result && result.length > 0) {
+      const saveResult = await window.pdfAPI.saveDialog(`page_${pageNum + 1}_copy.pdf`);
+      if (!saveResult.canceled && saveResult.filePath) {
+        await window.pdfAPI.writeFile(saveResult.filePath, Array.from(result[0]));
+        updateStatus(`第 ${pageNum + 1} 页已复制为新文件`);
+      }
     }
   } catch (error) {
     console.error('Failed to duplicate page:', error);
+    handleError(error);
+  }
+}
+
+async function handlePrintPage(pageNum) {
+  if (!currentPdfPath || pageNum < 0) return;
+
+  try {
+    updateStatus(`正在准备打印第 ${pageNum + 1} 页...`);
+
+    // Create a temporary PDF with just this page
+    const result = await window.pdfAPI.split(currentPdfPath, [String(pageNum + 1)]);
+
+    if (result && result.length > 0) {
+      // Create a blob URL for the PDF
+      const blob = new Blob([result[0]], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+
+      // Open in new window for printing
+      const printWindow = window.open(url, '_blank');
+      if (printWindow) {
+        printWindow.addEventListener('load', () => {
+          printWindow.print();
+        });
+        updateStatus(`正在打印第 ${pageNum + 1} 页...`);
+      } else {
+        updateStatus('请允许弹出窗口以打印页面');
+      }
+
+      // Clean up the blob URL after a delay
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    }
+  } catch (error) {
+    console.error('Failed to print page:', error);
+    handleError(error);
+  }
+}
+
+async function handlePrintSelectedPages(pageNumbers) {
+  if (!currentPdfPath || pageNumbers.length === 0) return;
+
+  try {
+    const sortedPages = [...pageNumbers].sort((a, b) => a - b);
+    const pageList = sortedPages.map(p => p + 1);
+    
+    updateStatus(`正在准备打印 ${pageList.length} 页...`);
+
+    // Create range string for split API
+    const rangeStr = pageList.join(',');
+    const result = await window.pdfAPI.split(currentPdfPath, [rangeStr]);
+
+    if (result && result.length > 0) {
+      // Create a blob URL for the PDF
+      const blob = new Blob([result[0]], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+
+      // Open in new window for printing
+      const printWindow = window.open(url, '_blank');
+      if (printWindow) {
+        printWindow.addEventListener('load', () => {
+          printWindow.print();
+        });
+        updateStatus(`正在打印 ${pageList.length} 页...`);
+      } else {
+        updateStatus('请允许弹出窗口以打印页面');
+      }
+
+      // Clean up the blob URL after a delay
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    }
+  } catch (error) {
+    console.error('Failed to print selected pages:', error);
     handleError(error);
   }
 }
@@ -1373,6 +1496,167 @@ async function reloadCurrentPDF() {
   currentPdfPath = null;
 
   await handleSelectedFiles([{ path, name: path.split('/').pop() }]);
+}
+
+// Search functionality
+function setupSearch() {
+  const searchInput = document.getElementById('searchInput');
+  const searchPrevBtn = document.getElementById('searchPrevBtn');
+  const searchNextBtn = document.getElementById('searchNextBtn');
+
+  if (searchInput) {
+    searchInput.addEventListener('input', debounce(handleSearchInput, 300));
+    searchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          goToPreviousSearchResult();
+        } else {
+          goToNextSearchResult();
+        }
+      } else if (e.key === 'Escape') {
+        clearSearch();
+        searchInput.blur();
+      }
+    });
+  }
+
+  if (searchPrevBtn) {
+    searchPrevBtn.addEventListener('click', goToPreviousSearchResult);
+  }
+
+  if (searchNextBtn) {
+    searchNextBtn.addEventListener('click', goToNextSearchResult);
+  }
+
+  // Add Ctrl+F shortcut
+  window.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+      e.preventDefault();
+      if (searchInput) {
+        searchInput.focus();
+        searchInput.select();
+      }
+    }
+  });
+}
+
+async function handleSearchInput(e) {
+  const query = e.target.value.trim();
+  
+  if (query === '') {
+    clearSearch();
+    return;
+  }
+
+  if (query === searchState.query) {
+    return;
+  }
+
+  searchState.query = query;
+  searchState.results = [];
+  searchState.currentIndex = -1;
+
+  await performSearch(query);
+}
+
+async function performSearch(query) {
+  if (!currentPdfPath || !query) return;
+
+  searchState.isSearching = true;
+  updateSearchResultCount('搜索中...');
+
+  try {
+    const pdf = await getOrLoadPdfDocument(currentPdfPath);
+    const results = [];
+
+    for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+      const page = await pdf.getPage(pageNum);
+      const textContent = await page.getTextContent();
+      
+      let text = '';
+      const items = textContent.items;
+      
+      for (const item of items) {
+        text += item.str + ' ';
+      }
+
+      // Find all occurrences in this page
+      let index = 0;
+      const lowerText = text.toLowerCase();
+      const lowerQuery = query.toLowerCase();
+
+      while ((index = lowerText.indexOf(lowerQuery, index)) !== -1) {
+        results.push({
+          pageNum,
+          index,
+          text: text.substring(index, index + query.length)
+        });
+        index += query.length;
+      }
+    }
+
+    searchState.results = results;
+    searchState.currentIndex = results.length > 0 ? 0 : -1;
+    
+    updateSearchResultCount(results.length > 0 ? `${results.length} 个结果` : '无结果');
+
+    if (results.length > 0) {
+      highlightSearchResult();
+    }
+  } catch (error) {
+    console.error('Search failed:', error);
+    updateSearchResultCount('搜索失败');
+  } finally {
+    searchState.isSearching = false;
+  }
+}
+
+function goToNextSearchResult() {
+  if (searchState.results.length === 0) return;
+
+  searchState.currentIndex = (searchState.currentIndex + 1) % searchState.results.length;
+  highlightSearchResult();
+}
+
+function goToPreviousSearchResult() {
+  if (searchState.results.length === 0) return;
+
+  searchState.currentIndex = searchState.currentIndex === 0 
+    ? searchState.results.length - 1 
+    : searchState.currentIndex - 1;
+  highlightSearchResult();
+}
+
+function highlightSearchResult() {
+  if (searchState.currentIndex < 0 || searchState.currentIndex >= searchState.results.length) return;
+
+  const result = searchState.results[searchState.currentIndex];
+  
+  // Navigate to the page
+  goToPage(result.pageNum);
+  
+  // Update the result count display
+  updateSearchResultCount(`${searchState.currentIndex + 1}/${searchState.results.length}`);
+
+  updateStatus(`找到第 ${searchState.currentIndex + 1} 个结果，在第 ${result.pageNum} 页`);
+}
+
+function clearSearch() {
+  searchState.query = '';
+  searchState.results = [];
+  searchState.currentIndex = -1;
+  updateSearchResultCount('');
+  
+  // Clear any visual highlights
+  document.querySelectorAll('.search-highlight').forEach(el => el.remove());
+}
+
+function updateSearchResultCount(text) {
+  const countEl = document.getElementById('searchResultCount');
+  if (countEl) {
+    countEl.textContent = text;
+  }
 }
 
 // Bookmarks state
