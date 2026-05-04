@@ -42,6 +42,7 @@
             <div class="submenu-item" data-action="toggleRightSidebar">隐藏/显示右侧面板</div>
             <div class="submenu-divider"></div>
             <div class="submenu-item" data-action="fullscreen">全屏 <span class="shortcut">F11</span></div>
+            <div class="submenu-item" data-action="slideshow">幻灯片模式</div>
           </div>
         </div>
         <div class="menu-item has-submenu" data-action="tools">
@@ -56,6 +57,10 @@
             <div class="submenu-item" data-action="openMergeModal">合并 PDF</div>
             <div class="submenu-item" data-action="openSplitModal">拆分 PDF</div>
             <div class="submenu-item" data-action="openWatermarkModal">添加水印</div>
+            <div class="submenu-divider"></div>
+            <div class="submenu-item" data-action="compare">PDF 比较</div>
+            <div class="submenu-item" data-action="signature">电子签名</div>
+            <div class="submenu-item" data-action="formFill">表单填写</div>
           </div>
         </div>
         <div class="menu-item has-submenu" data-action="settings">
@@ -255,6 +260,13 @@
             <h3>欢迎使用 PDF Editor</h3>
             <p>打开一个 PDF 文件开始编辑</p>
             <button class="btn btn-primary" id="welcomeOpenBtn">打开文件</button>
+            
+            <!-- Recent Files Section -->
+            <div class="recent-files-section" id="recentFilesSection" style="display: none;">
+              <h4 class="property-title">最近文件</h4>
+              <div class="recent-files-list" id="recentFilesList"></div>
+              <button class="action-btn" id="clearRecentFilesBtn" style="margin-top: 8px;">清除最近文件</button>
+            </div>
           </div>
 
           <!-- Tool Properties (shown when tool selected) -->
@@ -397,9 +409,13 @@
             <button class="action-btn" id="quickSplitBtn">拆分 PDF</button>
             <button class="action-btn" id="quickWatermarkBtn">添加水印</button>
             <button class="action-btn" id="quickPageNumbersBtn">添加页码</button>
+            <button class="action-btn" id="quickHeaderFooterBtn">添加页眉页脚</button>
+            <button class="action-btn" id="quickBackgroundBtn">添加背景</button>
             <button class="action-btn" id="quickCompressBtn">压缩 PDF</button>
             <button class="action-btn" id="quickExportImagesBtn">导出为图片</button>
             <button class="action-btn" id="quickImagesToPdfBtn">图片转PDF</button>
+            <button class="action-btn" id="quickExtractTextBtn">提取文本</button>
+            <button class="action-btn" id="quickDocStatsBtn">文档统计</button>
           </div>
 
           <!-- PDF Properties (shown when file loaded) -->
@@ -841,6 +857,109 @@
     </div>
   </div>
 
+  <!-- Header Footer Modal -->
+  <div class="modal-overlay" id="headerFooterModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>添加页眉页脚</h3>
+        <button class="modal-close" id="closeHeaderFooterModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="headerText">页眉文本</label>
+          <input type="text" id="headerText" class="form-input" placeholder="留空则不添加页眉" />
+          <p class="form-hint">使用 {page} 表示页码，{total} 表示总页数</p>
+        </div>
+        <div class="form-group">
+          <label for="footerText">页脚文本</label>
+          <input type="text" id="footerText" class="form-input" placeholder="留空则不添加页脚" />
+        </div>
+        <div class="form-group">
+          <label for="headerFooterFontSize">字体大小</label>
+          <input type="number" id="headerFooterFontSize" class="form-input" min="8" max="24" value="10" />
+        </div>
+        <div class="form-group checkbox-group">
+          <label><input type="checkbox" id="skipFirstHeaderFooter"> 跳过第一页</label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" id="cancelHeaderFooterModal">取消</button>
+        <button class="btn btn-primary" id="confirmHeaderFooterBtn">确定添加</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Background Modal -->
+  <div class="modal-overlay" id="backgroundModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>添加背景</h3>
+        <button class="modal-close" id="closeBackgroundModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="bgColor">背景颜色</label>
+          <input type="color" id="bgColor" class="form-input" value="#f5f5f5" />
+        </div>
+        <div class="form-group">
+          <label for="bgOpacity">透明度</label>
+          <div class="slider-container">
+            <input type="range" id="bgOpacity" min="0" max="100" value="50">
+            <span id="bgOpacityValue">50%</span>
+          </div>
+        </div>
+        <div class="form-group checkbox-group">
+          <label><input type="checkbox" id="skipFirstBackground"> 跳过第一页</label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" id="cancelBackgroundModal">取消</button>
+        <button class="btn btn-primary" id="confirmBackgroundBtn">确定添加</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Document Stats Modal -->
+  <div class="modal-overlay" id="docStatsModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>文档统计</h3>
+        <button class="modal-close" id="closeDocStatsModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="stats-grid">
+          <div class="stat-item">
+            <span class="stat-label">文件大小</span>
+            <span class="stat-value" id="statFileSize">--</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">页数</span>
+            <span class="stat-value" id="statPageCount">--</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">图片数量</span>
+            <span class="stat-value" id="statImageCount">--</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">标题</span>
+            <span class="stat-value" id="statTitle">--</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">作者</span>
+            <span class="stat-value" id="statAuthor">--</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">创建者</span>
+            <span class="stat-value" id="statCreator">--</span>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" id="closeDocStatsBtn">关闭</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Delete Page Modal -->
   <div class="modal-overlay" id="deletePageModal">
     <div class="modal">
@@ -858,6 +977,130 @@
       <div class="modal-footer">
         <button class="btn" id="cancelDeletePageModal">取消</button>
         <button class="btn btn-danger" id="confirmDeletePageBtn">确定删除</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Slideshow Modal -->
+  <div class="modal-overlay" id="slideshowModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>幻灯片模式</h3>
+        <button class="modal-close" id="closeSlideshowModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>自动翻页间隔</label>
+          <select id="slideshowInterval" class="form-input">
+            <option value="3">3 秒</option>
+            <option value="5" selected>5 秒</option>
+            <option value="10">10 秒</option>
+            <option value="15">15 秒</option>
+            <option value="30">30 秒</option>
+          </select>
+        </div>
+        <div class="form-group checkbox-group">
+          <label><input type="checkbox" id="slideshowLoop" checked> 循环播放</label>
+        </div>
+        <div class="form-group checkbox-group">
+          <label><input type="checkbox" id="slideshowShowControls" checked> 显示控制按钮</label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" id="cancelSlideshowModal">取消</button>
+        <button class="btn btn-primary" id="startSlideshowBtn">开始播放</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PDF Compare Modal -->
+  <div class="modal-overlay" id="compareModal">
+    <div class="modal" style="width: 600px;">
+      <div class="modal-header">
+        <h3>PDF 比较</h3>
+        <button class="modal-close" id="closeCompareModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>选择要比较的 PDF 文件</label>
+          <div style="display: flex; gap: 8px; margin-top: 8px;">
+            <input type="text" id="compareFile1" class="form-input" placeholder="第一个文件" readonly />
+            <button class="btn" id="selectCompareFile1Btn">选择</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>与当前文件比较</label>
+          <div style="display: flex; gap: 8px; margin-top: 8px;">
+            <input type="text" id="compareFile2" class="form-input" placeholder="第二个文件（当前文件）" readonly />
+          </div>
+        </div>
+        <div class="form-group checkbox-group">
+          <label><input type="checkbox" id="syncScrolling" checked> 同步滚动</label>
+        </div>
+        <div class="form-group checkbox-group">
+          <label><input type="checkbox" id="syncZoom" checked> 同步缩放</label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" id="cancelCompareModal">取消</button>
+        <button class="btn btn-primary" id="startCompareBtn">开始比较</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Signature Modal -->
+  <div class="modal-overlay" id="signatureModal">
+    <div class="modal" style="width: 500px;">
+      <div class="modal-header">
+        <h3>添加签名</h3>
+        <button class="modal-close" id="closeSignatureModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="signature-modal-content">
+          <div class="signature-tabs">
+            <button class="signature-tab active" data-tab="draw">手写签名</button>
+            <button class="signature-tab" data-tab="type">输入签名</button>
+            <button class="signature-tab" data-tab="upload">上传图片</button>
+          </div>
+          
+          <div id="signatureDrawTab" class="signature-tab-content">
+            <div class="signature-canvas-container">
+              <canvas id="signatureCanvas" class="signature-canvas"></canvas>
+            </div>
+            <div class="signature-color-picker" style="margin-top: 8px;">
+              <span style="font-size: 12px; color: var(--text-secondary);">颜色：</span>
+              <button class="signature-color-btn active" data-color="#000000" style="background: #000000;"></button>
+              <button class="signature-color-btn" data-color="#1a1a1a" style="background: #1a1a1a;"></button>
+              <button class="signature-color-btn" data-color="#333333" style="background: #333333;"></button>
+              <button class="signature-color-btn" data-color="#1473e6" style="background: #1473e6;"></button>
+            </div>
+          </div>
+          
+          <div id="signatureTypeTab" class="signature-tab-content" style="display: none;">
+            <input type="text" id="signatureTypeInput" class="signature-type-input" placeholder="输入您的签名" />
+            <div class="signature-color-picker" style="margin-top: 8px;">
+              <span style="font-size: 12px; color: var(--text-secondary);">颜色：</span>
+              <button class="signature-color-btn active" data-color="#000000" style="background: #000000;"></button>
+              <button class="signature-color-btn" data-color="#1473e6" style="background: #1473e6;"></button>
+              <button class="signature-color-btn" data-color="#c41d7f" style="background: #c41d7f;"></button>
+            </div>
+            <div class="signature-preview" id="signatureTypePreview" style="margin-top: 8px;">
+              <span style="font-family: 'Brush Script MT', cursive; font-size: 24px; color: #000;">预览</span>
+            </div>
+          </div>
+          
+          <div id="signatureUploadTab" class="signature-tab-content" style="display: none;">
+            <button class="btn btn-secondary" id="uploadSignatureBtn" style="width: 100%;">选择签名图片</button>
+            <div class="signature-preview" id="signatureUploadPreview" style="margin-top: 8px;">
+              <span style="color: var(--text-secondary); font-size: 12px;">未选择图片</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" id="clearSignatureBtn">清除</button>
+        <button class="btn" id="cancelSignatureModal">取消</button>
+        <button class="btn btn-primary" id="confirmSignatureBtn">确定</button>
       </div>
     </div>
   </div>

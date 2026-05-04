@@ -524,6 +524,280 @@ async function resizePages(filePath, pageNumbers, newSize, options = {}) {
   return Buffer.from(await pdfDoc.save());
 }
 
+async function extractText(filePath, pageNum = null) {
+  validateString(filePath, 'filePath');
+
+  let fileData;
+  let pdfDoc;
+
+  try {
+    fileData = await fs.readFile(filePath);
+    pdfDoc = await PDFDocument.load(fileData);
+  } catch (error) {
+    throw new Error(`Failed to read PDF file: ${error.message}`);
+  }
+
+  const pages = pdfDoc.getPages();
+  const totalPages = pages.length;
+
+  if (pageNum !== null) {
+    validateNumber(pageNum, 'pageNum', 1, totalPages);
+    const page = pages[pageNum - 1];
+    const textContent = await page.getTextContent ? await page.getTextContent() : { items: [] };
+    return {
+      page: pageNum,
+      text: textContent.items ? textContent.items.map(item => item.str).join(' ') : ''
+    };
+  }
+
+  const allText = [];
+  for (let i = 0; i < totalPages; i++) {
+    const page = pages[i];
+    try {
+      const textContent = await page.getTextContent ? await page.getTextContent() : { items: [] };
+      allText.push({
+        page: i + 1,
+        text: textContent.items ? textContent.items.map(item => item.str).join(' ') : ''
+      });
+    } catch (e) {
+      allText.push({ page: i + 1, text: '' });
+    }
+  }
+
+  return allText;
+}
+
+async function extractImages(filePath, pageNum = null) {
+  validateString(filePath, 'filePath');
+
+  let fileData;
+  let pdfDoc;
+
+  try {
+    fileData = await fs.readFile(filePath);
+    pdfDoc = await PDFDocument.load(fileData);
+  } catch (error) {
+    throw new Error(`Failed to read PDF file: ${error.message}`);
+  }
+
+  const pages = pdfDoc.getPages();
+  const totalPages = pages.length;
+  const images = [];
+
+  for (let i = 0; i < totalPages; i++) {
+    if (pageNum !== null && i !== pageNum - 1) continue;
+
+    const page = pages[i];
+    const resources = page.node.get('Resources');
+    
+    if (resources) {
+      const xObject = resources.get('XObject');
+      if (xObject) {
+        const xObjectDict = xObject.dict;
+        const keys = xObjectDict.keys();
+        
+        for (const key of keys) {
+          try {
+            const obj = xObjectDict.get(key);
+            if (obj) {
+              const subtype = obj.get('Subtype');
+              if (subtype && subtype.toString() === '/Image') {
+                images.push({
+                  page: i + 1,
+                  key: key.toString(),
+                  width: obj.get('Width')?.toNumber() || 0,
+                  height: obj.get('Height')?.toNumber() || 0
+                });
+              }
+            }
+          } catch (e) {
+            // Skip invalid objects
+          }
+        }
+      }
+    }
+  }
+
+  return images;
+}
+
+async function addHeaderFooter(filePath, options = {}) {
+  validateString(filePath, 'filePath');
+
+  let fileData;
+  let pdfDoc;
+
+  try {
+    fileData = await fs.readFile(filePath);
+    pdfDoc = await PDFDocument.load(fileData);
+  } catch (error) {
+    throw new Error(`Failed to read PDF file: ${error.message}`);
+  }
+
+  const pages = pdfDoc.getPages();
+  const totalPages = pages.length;
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+
+  const headerText = options.headerText || '';
+  const footerText = options.footerText || '';
+  const fontSize = options.fontSize || 10;
+  const margin = options.margin || 30;
+  const skipFirst = options.skipFirst || false;
+
+  for (let i = 0; i < totalPages; i++) {
+    if (skipFirst && i === 0) continue;
+
+    const page = pages[i];
+    const { width, height } = page.getSize();
+
+    // Add header
+    if (headerText) {
+      const text = headerText
+        .replace('{page}', String(i + 1))
+        .replace('{total}', String(totalPages));
+      const textWidth = font.widthOfTextAtSize(text, fontSize);
+      
+      page.drawText(text, {
+        x: (width - textWidth) / 2,
+        y: height - margin,
+        size: fontSize,
+        font,
+        color: rgb(0, 0, 0)
+      });
+    }
+
+    // Add footer
+    if (footerText) {
+      const text = footerText
+        .replace('{page}', String(i + 1))
+        .replace('{total}', String(totalPages));
+      const textWidth = font.widthOfTextAtSize(text, fontSize);
+      
+      page.drawText(text, {
+        x: (width - textWidth) / 2,
+        y: margin,
+        size: fontSize,
+        font,
+        color: rgb(0, 0, 0)
+      });
+    }
+  }
+
+  return Buffer.from(await pdfDoc.save());
+}
+
+async function addBackground(filePath, options = {}) {
+  validateString(filePath, 'filePath');
+
+  let fileData;
+  let pdfDoc;
+
+  try {
+    fileData = await fs.readFile(filePath);
+    pdfDoc = await PDFDocument.load(fileData);
+  } catch (error) {
+    throw new Error(`Failed to read PDF file: ${error.message}`);
+  }
+
+  const pages = pdfDoc.getPages();
+  const totalPages = pages.length;
+
+  const bgColor = options.color || '#ffffff';
+  const opacity = options.opacity !== undefined ? options.opacity : 0.5;
+  const skipFirst = options.skipFirst || false;
+
+  // Parse color
+  let r = 1, g = 1, b = 1;
+  if (bgColor.startsWith('#')) {
+    const hex = bgColor.slice(1);
+    r = parseInt(hex.slice(0, 2), 16) / 255;
+    g = parseInt(hex.slice(2, 4), 16) / 255;
+    b = parseInt(hex.slice(4, 6), 16) / 255;
+  }
+
+  for (let i = 0; i < totalPages; i++) {
+    if (skipFirst && i === 0) continue;
+
+    const page = pages[i];
+    const { width, height } = page.getSize();
+
+    // Draw background rectangle
+    page.drawRectangle({
+      x: 0,
+      y: 0,
+      width,
+      height,
+      color: rgb(r, g, b),
+      opacity
+    });
+  }
+
+  return Buffer.from(await pdfDoc.save());
+}
+
+async function getDocumentStats(filePath) {
+  validateString(filePath, 'filePath');
+
+  let fileData;
+  let pdfDoc;
+
+  try {
+    fileData = await fs.readFile(filePath);
+    pdfDoc = await PDFDocument.load(fileData);
+  } catch (error) {
+    throw new Error(`Failed to read PDF file: ${error.message}`);
+  }
+
+  const pages = pdfDoc.getPages();
+  const totalPages = pages.length;
+  const stats = {
+    pageCount: totalPages,
+    fileSize: fileData.length,
+    textChars: 0,
+    imageCount: 0,
+    pageSize: [],
+    title: pdfDoc.getTitle() || '',
+    author: pdfDoc.getAuthor() || '',
+    creator: pdfDoc.getCreator() || '',
+    producer: pdfDoc.getProducer() || '',
+    creationDate: pdfDoc.getCreationDate(),
+    modificationDate: pdfDoc.getModificationDate()
+  };
+
+  for (let i = 0; i < totalPages; i++) {
+    const page = pages[i];
+    const { width, height } = page.getSize();
+    stats.pageSize.push({ page: i + 1, width, height });
+
+    // Count images
+    const resources = page.node.get('Resources');
+    if (resources) {
+      const xObject = resources.get('XObject');
+      if (xObject) {
+        const xObjectDict = xObject.dict;
+        const keys = xObjectDict.keys();
+        for (const key of keys) {
+          try {
+            const obj = xObjectDict.get(key);
+            if (obj) {
+              const subtype = obj.get('Subtype');
+              if (subtype && subtype.toString() === '/Image') {
+                stats.imageCount++;
+              }
+            }
+          } catch (e) {
+            // Skip
+          }
+        }
+      }
+    }
+  }
+
+  stats.fileSizeMB = (stats.fileSize / 1024 / 1024).toFixed(2);
+
+  return stats;
+}
+
 async function applyEdits(filePath, operations) {
   validateString(filePath, 'filePath');
   validateArray(operations, 'operations');
@@ -1384,5 +1658,10 @@ module.exports = {
   compressPDF,
   imagesToPDF,
   resizePages,
+  extractText,
+  extractImages,
+  addHeaderFooter,
+  addBackground,
+  getDocumentStats,
   _resetMergePromise
 };

@@ -110,6 +110,30 @@ contextBridge.exposeInMainWorld('pdfAPI', {
     if (options !== undefined && (typeof options !== 'object' || options === null || Array.isArray(options))) throw new Error('options must be a valid object');
     return ipcRenderer.invoke('pdf:resizePages', filePath, pageNumbers, newSize, options);
   },
+  extractText: (filePath, pageNum) => {
+    if (typeof filePath !== 'string' || !filePath) throw new Error('filePath must be a non-empty string');
+    if (pageNum !== undefined && pageNum !== null && (typeof pageNum !== 'number' || pageNum < 1)) throw new Error('pageNum must be a positive number');
+    return ipcRenderer.invoke('pdf:extractText', filePath, pageNum);
+  },
+  extractImages: (filePath, pageNum) => {
+    if (typeof filePath !== 'string' || !filePath) throw new Error('filePath must be a non-empty string');
+    if (pageNum !== undefined && pageNum !== null && (typeof pageNum !== 'number' || pageNum < 1)) throw new Error('pageNum must be a positive number');
+    return ipcRenderer.invoke('pdf:extractImages', filePath, pageNum);
+  },
+  addHeaderFooter: (filePath, options) => {
+    if (typeof filePath !== 'string' || !filePath) throw new Error('filePath must be a non-empty string');
+    if (options !== undefined && (typeof options !== 'object' || options === null || Array.isArray(options))) throw new Error('options must be a valid object');
+    return ipcRenderer.invoke('pdf:addHeaderFooter', filePath, options);
+  },
+  addBackground: (filePath, options) => {
+    if (typeof filePath !== 'string' || !filePath) throw new Error('filePath must be a non-empty string');
+    if (options !== undefined && (typeof options !== 'object' || options === null || Array.isArray(options))) throw new Error('options must be a valid object');
+    return ipcRenderer.invoke('pdf:addBackground', filePath, options);
+  },
+  getDocumentStats: (filePath) => {
+    if (typeof filePath !== 'string' || !filePath) throw new Error('filePath must be a non-empty string');
+    return ipcRenderer.invoke('pdf:getStats', filePath);
+  },
   getSettings: () => ipcRenderer.invoke('settings:get'),
   setSettings: (settings) => {
     if (typeof settings !== 'object' || settings === null || Array.isArray(settings)) throw new Error('settings must be a valid object');
@@ -118,7 +142,13 @@ contextBridge.exposeInMainWorld('pdfAPI', {
   ocrRecognize: (filePath, pageNum, options) => {
     if (typeof filePath !== 'string' || !filePath) throw new Error('filePath must be a non-empty string');
     return ipcRenderer.invoke('ocr:recognize', filePath, pageNum, options);
-  }
+  },
+  getRecentFiles: () => ipcRenderer.invoke('recentFiles:get'),
+  addRecentFile: (filePath) => {
+    if (typeof filePath !== 'string' || !filePath) throw new Error('filePath must be a non-empty string');
+    return ipcRenderer.invoke('recentFiles:add', filePath);
+  },
+  clearRecentFiles: () => ipcRenderer.invoke('recentFiles:clear')
 });
 
 function arrayBufferToBase64(buffer) {

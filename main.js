@@ -1,11 +1,13 @@
 const { app, BrowserWindow, ipcMain, dialog, nativeImage } = require('electron');
 const path = require('path');
-const { mergePDFs, splitPDF, addWatermark, loadPDF, applyEdits, rotatePDF, deletePages, protectPDF, getBookmarks, addBookmarks, movePage, addPageNumbers, setPDFMetadata, insertPages, insertBlankPage, cropPages, getPageDimensions, compressPDF, imagesToPDF, resizePages } = require('./pdf-utils');
+const { mergePDFs, splitPDF, addWatermark, loadPDF, applyEdits, rotatePDF, deletePages, protectPDF, getBookmarks, addBookmarks, movePage, addPageNumbers, setPDFMetadata, insertPages, insertBlankPage, cropPages, getPageDimensions, compressPDF, imagesToPDF, resizePages, extractText, extractImages, addHeaderFooter, addBackground, getDocumentStats } = require('./pdf-utils');
 const OCREngine = require('./ocr-engine');
 const { validateString, validateArray, validateNumber, validateBuffer, validateObject } = require('./validation');
 const fs = require('fs').promises;
 
 const settingsPath = path.join(app.getPath('userData'), 'settings.json');
+const recentFilesPath = path.join(app.getPath('userData'), 'recent-files.json');
+const MAX_RECENT_FILES = 10;
 
 async function loadSettings() {
   try {
@@ -24,6 +26,78 @@ async function saveSettings(settings) {
     return true;
   } catch (error) {
     console.error('Failed to save settings:', error);
+    return false;
+  }
+}
+
+async function loadRecentFiles() {
+  try {
+    const data = await fs.readFile(recentFilesPath, 'utf8');
+    const files = JSON.parse(data);
+    // Filter out files that no longer exist
+    const existingFiles = [];
+    for (const file of files) {
+      try {
+        await fs.access(file.path);
+        existingFiles.push(file);
+      } catch {
+        // File doesn't exist, skip it
+      }
+    }
+    return existingFiles;
+  } catch (error) {
+    return [];
+  }
+}
+
+async function saveRecentFiles(files) {
+  try {
+    const dir = path.dirname(recentFilesPath);
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(recentFilesPath, JSON.stringify(files, null, 2));
+    return true;
+  } catch (error) {
+    console.error('Failed to save recent files:', error);
+    return false;
+  }
+}
+
+async function addRecentFile(filePath) {
+  try {
+    const stats = await fs.stat(filePath);
+    const fileName = path.basename(filePath);
+    
+    let recentFiles = await loadRecentFiles();
+    
+    // Remove if already exists
+    recentFiles = recentFiles.filter(f => f.path !== filePath);
+    
+    // Add to beginning
+    recentFiles.unshift({
+      path: filePath,
+      name: fileName,
+      lastOpened: new Date().toISOString(),
+      size: stats.size
+    });
+    
+    // Keep only MAX_RECENT_FILES
+    if (recentFiles.length > MAX_RECENT_FILES) {
+      recentFiles = recentFiles.slice(0, MAX_RECENT_FILES);
+    }
+    
+    await saveRecentFiles(recentFiles);
+    return recentFiles;
+  } catch (error) {
+    console.error('Failed to add recent file:', error);
+    return await loadRecentFiles();
+  }
+}
+
+async function clearRecentFiles() {
+  try {
+    await fs.unlink(recentFilesPath).catch(() => {});
+    return true;
+  } catch (error) {
     return false;
   }
 }
@@ -359,6 +433,42 @@ ipcMain.handle('pdf:resizePages', safeIpcHandler('pdf:resizePages', async (_, fi
   return Array.from(result);
 }));
 
+// Extract text
+ipcMain.handle('pdf:extractText', safeIpcHandler('pdf:extractText', async (_, filePath, pageNum) => {
+  validateFilePath(filePath);
+  if (pageNum !== undefined && pageNum !== null) validateNumber(pageNum, 'pageNum', 1, 100000);
+  return await extractText(filePath, pageNum);
+}));
+
+// Extract images
+ipcMain.handle('pdf:extractImages', safeIpcHandler('pdf:extractImages', async (_, filePath, pageNum) => {
+  validateFilePath(filePath);
+  if (pageNum !== undefined && pageNum !== null) validateNumber(pageNum, 'pageNum', 1, 100000);
+  return await extractImages(filePath, pageNum);
+}));
+
+// Add header/footer
+ipcMain.handle('pdf:addHeaderFooter', safeIpcHandler('pdf:addHeaderFooter', async (_, filePath, options) => {
+  validateFilePath(filePath);
+  if (options !== undefined) validateObject(options, 'options');
+  const result = await addHeaderFooter(filePath, options);
+  return Array.from(result);
+}));
+
+// Add background
+ipcMain.handle('pdf:addBackground', safeIpcHandler('pdf:addBackground', async (_, filePath, options) => {
+  validateFilePath(filePath);
+  if (options !== undefined) validateObject(options, 'options');
+  const result = await addBackground(filePath, options);
+  return Array.from(result);
+}));
+
+// Get document stats
+ipcMain.handle('pdf:getStats', safeIpcHandler('pdf:getStats', async (_, filePath) => {
+  validateFilePath(filePath);
+  return await getDocumentStats(filePath);
+}));
+
 // Settings IPC handlers
 ipcMain.handle('settings:get', safeIpcHandler('settings:get', async () => {
   return await loadSettings();
@@ -367,6 +477,20 @@ ipcMain.handle('settings:get', safeIpcHandler('settings:get', async () => {
 ipcMain.handle('settings:set', safeIpcHandler('settings:set', async (_, settings) => {
   validateObject(settings, 'settings');
   return await saveSettings(settings);
+}));
+
+// Recent files IPC handlers
+ipcMain.handle('recentFiles:get', safeIpcHandler('recentFiles:get', async () => {
+  return await loadRecentFiles();
+}));
+
+ipcMain.handle('recentFiles:add', safeIpcHandler('recentFiles:add', async (_, filePath) => {
+  validateFilePath(filePath);
+  return await addRecentFile(filePath);
+}));
+
+ipcMain.handle('recentFiles:clear', safeIpcHandler('recentFiles:clear', async () => {
+  return await clearRecentFiles();
 }));
 
 let ocrEngineInstance = null;

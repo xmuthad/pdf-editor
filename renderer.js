@@ -490,6 +490,7 @@ function initEventListeners() {
     'toggleLeftSidebar': toggleLeftSidebar,
     'toggleRightSidebar': toggleRightSidebar,
     'fullscreen': toggleFullscreen,
+    'slideshow': openSlideshowModal,
 
     // Tools menu (container only)
     'tools': () => {}, // do nothing, it's a container
@@ -501,6 +502,9 @@ function initEventListeners() {
     'openMergeModal': openMergeModal,
     'openSplitModal': openSplitModal,
     'openWatermarkModal': openWatermarkModal,
+    'compare': openCompareModal,
+    'signature': openSignatureModal,
+    'formFill': detectFormFields,
 
     // Settings menu (container only)
     'settings': () => {}, // do nothing, it's a container
@@ -929,6 +933,22 @@ function initEventListeners() {
   // Images to PDF
   const quickImagesToPdfBtn = document.getElementById('quickImagesToPdfBtn');
   if (quickImagesToPdfBtn) quickImagesToPdfBtn.addEventListener('click', handleImagesToPdf);
+
+  // Extract text
+  const quickExtractTextBtn = document.getElementById('quickExtractTextBtn');
+  if (quickExtractTextBtn) quickExtractTextBtn.addEventListener('click', handleExtractText);
+
+  // Document stats
+  const quickDocStatsBtn = document.getElementById('quickDocStatsBtn');
+  if (quickDocStatsBtn) quickDocStatsBtn.addEventListener('click', handleDocStats);
+
+  // Header/Footer
+  const quickHeaderFooterBtn = document.getElementById('quickHeaderFooterBtn');
+  if (quickHeaderFooterBtn) quickHeaderFooterBtn.addEventListener('click', openHeaderFooterModal);
+
+  // Background
+  const quickBackgroundBtn = document.getElementById('quickBackgroundBtn');
+  if (quickBackgroundBtn) quickBackgroundBtn.addEventListener('click', openBackgroundModal);
 
   // PDF Properties
   const savePropertiesBtn = document.getElementById('savePropertiesBtn');
@@ -2114,6 +2134,62 @@ function renderOutline() {
   if (cancelResizeModal) cancelResizeModal.addEventListener('click', closeResizeModalFunc);
   if (confirmResizeBtn) confirmResizeBtn.addEventListener('click', performResize);
 
+  // Header/Footer Modal
+  const headerFooterModal = document.getElementById('headerFooterModal');
+  const closeHeaderFooterModal = document.getElementById('closeHeaderFooterModal');
+  const cancelHeaderFooterModal = document.getElementById('cancelHeaderFooterModal');
+  const confirmHeaderFooterBtn = document.getElementById('confirmHeaderFooterBtn');
+
+  function openHeaderFooterModal() {
+    if (headerFooterModal) headerFooterModal.classList.add('active');
+  }
+
+  function closeHeaderFooterModalFunc() {
+    if (headerFooterModal) headerFooterModal.classList.remove('active');
+  }
+
+  if (closeHeaderFooterModal) closeHeaderFooterModal.addEventListener('click', closeHeaderFooterModalFunc);
+  if (cancelHeaderFooterModal) cancelHeaderFooterModal.addEventListener('click', closeHeaderFooterModalFunc);
+  if (confirmHeaderFooterBtn) confirmHeaderFooterBtn.addEventListener('click', performAddHeaderFooter);
+
+  // Background Modal
+  const backgroundModal = document.getElementById('backgroundModal');
+  const closeBackgroundModal = document.getElementById('closeBackgroundModal');
+  const cancelBackgroundModal = document.getElementById('cancelBackgroundModal');
+  const confirmBackgroundBtn = document.getElementById('confirmBackgroundBtn');
+  const bgOpacity = document.getElementById('bgOpacity');
+  const bgOpacityValue = document.getElementById('bgOpacityValue');
+
+  if (bgOpacity && bgOpacityValue) {
+    bgOpacity.addEventListener('input', (e) => {
+      bgOpacityValue.textContent = e.target.value + '%';
+    });
+  }
+
+  function openBackgroundModal() {
+    if (backgroundModal) backgroundModal.classList.add('active');
+  }
+
+  function closeBackgroundModalFunc() {
+    if (backgroundModal) backgroundModal.classList.remove('active');
+  }
+
+  if (closeBackgroundModal) closeBackgroundModal.addEventListener('click', closeBackgroundModalFunc);
+  if (cancelBackgroundModal) cancelBackgroundModal.addEventListener('click', closeBackgroundModalFunc);
+  if (confirmBackgroundBtn) confirmBackgroundBtn.addEventListener('click', performAddBackground);
+
+  // Document Stats Modal
+  const docStatsModal = document.getElementById('docStatsModal');
+  const closeDocStatsModal = document.getElementById('closeDocStatsModal');
+  const closeDocStatsBtn = document.getElementById('closeDocStatsBtn');
+
+  function closeDocStatsModalFunc() {
+    if (docStatsModal) docStatsModal.classList.remove('active');
+  }
+
+  if (closeDocStatsModal) closeDocStatsModal.addEventListener('click', closeDocStatsModalFunc);
+  if (closeDocStatsBtn) closeDocStatsBtn.addEventListener('click', closeDocStatsModalFunc);
+
    // Delete Page modal event listeners
    const deletePageModal = document.getElementById('deletePageModal');
    const closeDeletePageModal = document.getElementById('closeDeletePageModal');
@@ -2417,6 +2493,9 @@ async function handleSelectedFiles(files) {
 
     // Save last opened file path
     await updateSetting('lastFilePath', currentPdfPath);
+    
+    // Add to recent files
+    await addRecentFile(currentPdfPath);
 
     // Clear thumbnail cache when opening a new PDF
     renderedThumbnails.clear();
@@ -4368,6 +4447,156 @@ async function handleImagesToPdf() {
   }
 }
 
+async function handleExtractText() {
+  if (!currentPdfPath) {
+    alert('请先打开 PDF 文件');
+    return;
+  }
+
+  try {
+    updateStatus('正在提取文本...');
+
+    // Get text from all pages using pdf.js
+    const pdf = await getOrLoadPdfDocument(currentPdfPath);
+    if (!pdf) {
+      alert('无法加载 PDF 文件');
+      return;
+    }
+
+    let allText = '';
+    for (let i = 1; i <= totalPages; i++) {
+      const page = await pdf.getPage(i);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items.map(item => item.str).join(' ');
+      allText += `--- 第 ${i} 页 ---\n${pageText}\n\n`;
+    }
+
+    // Save to file
+    const saveResult = await window.pdfAPI.saveDialog('extracted_text.txt');
+    if (!saveResult.canceled && saveResult.filePath) {
+      const encoder = new TextEncoder();
+      const buffer = encoder.encode(allText);
+      await window.pdfAPI.writeFile(saveResult.filePath, Array.from(buffer));
+      updateStatus(`文本已提取到 ${saveResult.filePath}`);
+    }
+  } catch (error) {
+    console.error('Failed to extract text:', error);
+    handleError(error);
+    updateStatus('提取文本失败');
+  }
+}
+
+async function handleDocStats() {
+  if (!currentPdfPath) {
+    alert('请先打开 PDF 文件');
+    return;
+  }
+
+  try {
+    updateStatus('正在获取文档统计...');
+
+    const stats = await window.pdfAPI.getDocumentStats(currentPdfPath);
+
+    // Update modal content
+    const statFileSize = document.getElementById('statFileSize');
+    const statPageCount = document.getElementById('statPageCount');
+    const statImageCount = document.getElementById('statImageCount');
+    const statTitle = document.getElementById('statTitle');
+    const statAuthor = document.getElementById('statAuthor');
+    const statCreator = document.getElementById('statCreator');
+
+    if (statFileSize) statFileSize.textContent = `${stats.fileSizeMB} MB`;
+    if (statPageCount) statPageCount.textContent = stats.pageCount;
+    if (statImageCount) statImageCount.textContent = stats.imageCount;
+    if (statTitle) statTitle.textContent = stats.title || '无';
+    if (statAuthor) statAuthor.textContent = stats.author || '未知';
+    if (statCreator) statCreator.textContent = stats.creator || '未知';
+
+    // Show modal
+    const docStatsModal = document.getElementById('docStatsModal');
+    if (docStatsModal) docStatsModal.classList.add('active');
+
+    updateStatus('文档统计已加载');
+  } catch (error) {
+    console.error('Failed to get document stats:', error);
+    handleError(error);
+    updateStatus('获取文档统计失败');
+  }
+}
+
+async function performAddHeaderFooter() {
+  if (!currentPdfPath) return;
+
+  try {
+    const headerText = document.getElementById('headerText')?.value || '';
+    const footerText = document.getElementById('footerText')?.value || '';
+    const fontSize = parseInt(document.getElementById('headerFooterFontSize')?.value) || 10;
+    const skipFirst = document.getElementById('skipFirstHeaderFooter')?.checked || false;
+
+    if (!headerText && !footerText) {
+      alert('请输入页眉或页脚文本');
+      return;
+    }
+
+    updateStatus('正在添加页眉页脚...');
+
+    const result = await window.pdfAPI.addHeaderFooter(currentPdfPath, {
+      headerText,
+      footerText,
+      fontSize,
+      skipFirst
+    });
+
+    // Save the file
+    const saveResult = await window.pdfAPI.saveDialog('with_header_footer.pdf');
+    if (!saveResult.canceled && saveResult.filePath) {
+      await window.pdfAPI.writeFile(saveResult.filePath, result);
+      updateStatus('页眉页脚已添加');
+
+      // Close modal
+      const headerFooterModal = document.getElementById('headerFooterModal');
+      if (headerFooterModal) headerFooterModal.classList.remove('active');
+    }
+  } catch (error) {
+    console.error('Failed to add header/footer:', error);
+    handleError(error);
+    updateStatus('添加页眉页脚失败');
+  }
+}
+
+async function performAddBackground() {
+  if (!currentPdfPath) return;
+
+  try {
+    const bgColor = document.getElementById('bgColor')?.value || '#f5f5f5';
+    const opacity = (parseInt(document.getElementById('bgOpacity')?.value) || 50) / 100;
+    const skipFirst = document.getElementById('skipFirstBackground')?.checked || false;
+
+    updateStatus('正在添加背景...');
+
+    const result = await window.pdfAPI.addBackground(currentPdfPath, {
+      color: bgColor,
+      opacity,
+      skipFirst
+    });
+
+    // Save the file
+    const saveResult = await window.pdfAPI.saveDialog('with_background.pdf');
+    if (!saveResult.canceled && saveResult.filePath) {
+      await window.pdfAPI.writeFile(saveResult.filePath, result);
+      updateStatus('背景已添加');
+
+      // Close modal
+      const backgroundModal = document.getElementById('backgroundModal');
+      if (backgroundModal) backgroundModal.classList.remove('active');
+    }
+  } catch (error) {
+    console.error('Failed to add background:', error);
+    handleError(error);
+    updateStatus('添加背景失败');
+  }
+}
+
 // Reload current PDF from disk after modifications
 async function reloadCurrentPDF() {
   try {
@@ -4473,6 +4702,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Load settings and auto-open last file if enabled
   await loadAppSettings();
+  
+  // Load recent files
+  await loadRecentFiles();
 
   // Auto-open last file if setting is enabled and file exists
   if (appSettings.openLastFile && appSettings.lastFilePath) {
@@ -4493,4 +4725,794 @@ document.addEventListener('DOMContentLoaded', async () => {
       await updateSetting('lastFilePath', '');
     }
   }
+});
+
+// ============================
+// Recent Files Functions
+// ============================
+let recentFiles = [];
+
+async function loadRecentFiles() {
+  try {
+    if (window.pdfAPI) {
+      recentFiles = await window.pdfAPI.getRecentFiles();
+      renderRecentFiles();
+    }
+  } catch (error) {
+    console.error('Failed to load recent files:', error);
+  }
+}
+
+function renderRecentFiles() {
+  const recentFilesSection = document.getElementById('recentFilesSection');
+  const recentFilesList = document.getElementById('recentFilesList');
+  
+  if (!recentFilesSection || !recentFilesList) return;
+  
+  if (recentFiles.length === 0) {
+    recentFilesSection.style.display = 'none';
+    return;
+  }
+  
+  recentFilesSection.style.display = 'block';
+  
+  recentFilesList.innerHTML = recentFiles.map(file => {
+    const sizeKB = Math.round(file.size / 1024);
+    const sizeDisplay = sizeKB > 1024 ? `${(sizeKB / 1024).toFixed(1)} MB` : `${sizeKB} KB`;
+    const lastOpened = new Date(file.lastOpened).toLocaleDateString();
+    
+    return `
+      <div class="recent-file-item" data-path="${escapeHtml(file.path)}">
+        <span class="recent-file-name">${escapeHtml(file.name)}</span>
+        <span class="recent-file-path">${escapeHtml(file.path)}</span>
+        <div class="recent-file-meta">
+          <span>${sizeDisplay}</span>
+          <span>${lastOpened}</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+  
+  recentFilesList.querySelectorAll('.recent-file-item').forEach(item => {
+    item.addEventListener('click', async () => {
+      const filePath = item.dataset.path;
+      if (filePath) {
+        const fileName = filePath.split(/[\\/]/).pop();
+        await handleSelectedFiles([{ path: filePath, name: fileName }]);
+      }
+    });
+  });
+  
+  const clearRecentFilesBtn = document.getElementById('clearRecentFilesBtn');
+  if (clearRecentFilesBtn) {
+    clearRecentFilesBtn.onclick = async () => {
+      if (confirm('确定要清除所有最近文件记录吗？')) {
+        await window.pdfAPI.clearRecentFiles();
+        recentFiles = [];
+        renderRecentFiles();
+        updateStatus('最近文件已清除');
+      }
+    };
+  }
+}
+
+async function addRecentFile(filePath) {
+  try {
+    if (window.pdfAPI) {
+      recentFiles = await window.pdfAPI.addRecentFile(filePath);
+      renderRecentFiles();
+    }
+  } catch (error) {
+    console.error('Failed to add recent file:', error);
+  }
+}
+
+// ============================
+// Fullscreen & Slideshow Mode
+// ============================
+let isFullscreenMode = false;
+let isSlideshowMode = false;
+let slideshowTimer = null;
+let slideshowSettings = {
+  interval: 5,
+  loop: true,
+  showControls: true
+};
+
+function toggleFullscreen() {
+  const appContainer = document.querySelector('.app-container');
+  
+  if (!isFullscreenMode) {
+    appContainer.classList.add('fullscreen-mode');
+    isFullscreenMode = true;
+    
+    const hint = document.createElement('div');
+    hint.className = 'fullscreen-exit-hint';
+    hint.textContent = '按 ESC 或 F11 退出全屏模式';
+    document.body.appendChild(hint);
+    
+    setTimeout(() => hint.remove(), 3000);
+    
+    document.addEventListener('keydown', handleFullscreenKeydown);
+  } else {
+    exitFullscreen();
+  }
+}
+
+function exitFullscreen() {
+  const appContainer = document.querySelector('.app-container');
+  appContainer.classList.remove('fullscreen-mode');
+  appContainer.classList.remove('slideshow-mode');
+  isFullscreenMode = false;
+  isSlideshowMode = false;
+  
+  if (slideshowTimer) {
+    clearInterval(slideshowTimer);
+    slideshowTimer = null;
+  }
+  
+  const controls = document.querySelector('.slideshow-controls');
+  if (controls) controls.remove();
+  
+  document.removeEventListener('keydown', handleFullscreenKeydown);
+  updateStatus('已退出全屏模式');
+}
+
+function handleFullscreenKeydown(e) {
+  if (e.key === 'Escape' || e.key === 'F11') {
+    exitFullscreen();
+  }
+}
+
+function openSlideshowModal() {
+  const slideshowModal = document.getElementById('slideshowModal');
+  if (slideshowModal) {
+    slideshowModal.classList.add('active');
+  }
+}
+
+function closeSlideshowModalFunc() {
+  const slideshowModal = document.getElementById('slideshowModal');
+  if (slideshowModal) {
+    slideshowModal.classList.remove('active');
+  }
+}
+
+function startSlideshow() {
+  if (!currentPdfPath || totalPages === 0) {
+    alert('请先打开 PDF 文件');
+    return;
+  }
+  
+  slideshowSettings.interval = parseInt(document.getElementById('slideshowInterval')?.value) || 5;
+  slideshowSettings.loop = document.getElementById('slideshowLoop')?.checked ?? true;
+  slideshowSettings.showControls = document.getElementById('slideshowShowControls')?.checked ?? true;
+  
+  closeSlideshowModalFunc();
+  
+  const appContainer = document.querySelector('.app-container');
+  appContainer.classList.add('slideshow-mode');
+  isSlideshowMode = true;
+  isFullscreenMode = true;
+  
+  if (slideshowSettings.showControls) {
+    createSlideshowControls();
+  }
+  
+  goToPage(1);
+  
+  slideshowTimer = setInterval(() => {
+    if (currentPage < totalPages) {
+      goToPage(currentPage + 1);
+    } else if (slideshowSettings.loop) {
+      goToPage(1);
+    } else {
+      exitFullscreen();
+    }
+  }, slideshowSettings.interval * 1000);
+  
+  document.addEventListener('keydown', handleSlideshowKeydown);
+  
+  updateStatus('幻灯片模式已启动');
+}
+
+function createSlideshowControls() {
+  const controls = document.createElement('div');
+  controls.className = 'slideshow-controls';
+  controls.innerHTML = `
+    <button class="slideshow-btn" id="slideshowPrevBtn">◀</button>
+    <div class="slideshow-page-info">
+      <span id="slideshowPageNum">${currentPage}</span> / ${totalPages}
+    </div>
+    <button class="slideshow-btn" id="slideshowNextBtn">▶</button>
+    <button class="slideshow-btn" id="slideshowPauseBtn">⏸</button>
+    <button class="slideshow-btn" id="slideshowExitBtn">✕</button>
+  `;
+  
+  document.body.appendChild(controls);
+  
+  document.getElementById('slideshowPrevBtn')?.addEventListener('click', () => {
+    if (currentPage > 1) goToPage(currentPage - 1);
+  });
+  
+  document.getElementById('slideshowNextBtn')?.addEventListener('click', () => {
+    if (currentPage < totalPages) goToPage(currentPage + 1);
+  });
+  
+  document.getElementById('slideshowPauseBtn')?.addEventListener('click', toggleSlideshowPause);
+  
+  document.getElementById('slideshowExitBtn')?.addEventListener('click', exitFullscreen);
+}
+
+function toggleSlideshowPause() {
+  const pauseBtn = document.getElementById('slideshowPauseBtn');
+  if (slideshowTimer) {
+    clearInterval(slideshowTimer);
+    slideshowTimer = null;
+    if (pauseBtn) pauseBtn.textContent = '▶';
+  } else {
+    slideshowTimer = setInterval(() => {
+      if (currentPage < totalPages) {
+        goToPage(currentPage + 1);
+      } else if (slideshowSettings.loop) {
+        goToPage(1);
+      } else {
+        exitFullscreen();
+      }
+    }, slideshowSettings.interval * 1000);
+    if (pauseBtn) pauseBtn.textContent = '⏸';
+  }
+}
+
+function handleSlideshowKeydown(e) {
+  if (e.key === 'Escape') {
+    exitFullscreen();
+  } else if (e.key === 'ArrowLeft' && currentPage > 1) {
+    goToPage(currentPage - 1);
+  } else if (e.key === 'ArrowRight' && currentPage < totalPages) {
+    goToPage(currentPage + 1);
+  } else if (e.key === ' ') {
+    toggleSlideshowPause();
+    e.preventDefault();
+  }
+}
+
+// ============================
+// PDF Comparison
+// ============================
+let compareFilePath = null;
+let compareSyncScroll = true;
+let compareSyncZoom = true;
+
+function openCompareModal() {
+  if (!currentPdfPath) {
+    alert('请先打开 PDF 文件');
+    return;
+  }
+  
+  const compareModal = document.getElementById('compareModal');
+  const compareFile2 = document.getElementById('compareFile2');
+  
+  if (compareModal) {
+    compareModal.classList.add('active');
+  }
+  
+  if (compareFile2) {
+    compareFile2.value = currentPdfPath;
+  }
+  
+  const compareFile1 = document.getElementById('compareFile1');
+  if (compareFile1) compareFile1.value = '';
+  compareFilePath = null;
+}
+
+function closeCompareModalFunc() {
+  const compareModal = document.getElementById('compareModal');
+  if (compareModal) {
+    compareModal.classList.remove('active');
+  }
+}
+
+async function selectCompareFile() {
+  const result = await window.pdfAPI.pickPDF();
+  if (!result.canceled && result.filePaths.length > 0) {
+    compareFilePath = result.filePaths[0];
+    const compareFile1 = document.getElementById('compareFile1');
+    if (compareFile1) {
+      compareFile1.value = compareFilePath;
+    }
+  }
+}
+
+async function startCompare() {
+  if (!compareFilePath || !currentPdfPath) {
+    alert('请选择要比较的文件');
+    return;
+  }
+  
+  compareSyncScroll = document.getElementById('syncScrolling')?.checked ?? true;
+  compareSyncZoom = document.getElementById('syncZoom')?.checked ?? true;
+  
+  closeCompareModalFunc();
+  
+  const appContainer = document.querySelector('.app-container');
+  appContainer.classList.add('fullscreen-mode');
+  isFullscreenMode = true;
+  
+  const workspace = document.querySelector('.workspace');
+  workspace.innerHTML = `
+    <div class="comparison-container">
+      <div class="comparison-panel" id="comparePanel1">
+        <div class="comparison-panel-header">
+          <span class="comparison-panel-title">${escapeHtml(compareFilePath.split(/[\\/]/).pop())}</span>
+          <span class="comparison-sync-indicator">第 1 页</span>
+        </div>
+        <div class="comparison-panel-content" id="compareContent1"></div>
+      </div>
+      <div class="comparison-panel" id="comparePanel2">
+        <div class="comparison-panel-header">
+          <span class="comparison-panel-title">${escapeHtml(currentPdfPath.split(/[\\/]/).pop())}</span>
+          <span class="comparison-sync-indicator">第 1 页</span>
+        </div>
+        <div class="comparison-panel-content" id="compareContent2"></div>
+      </div>
+    </div>
+  `;
+  
+  await renderComparePages(1);
+  
+  setupCompareSync();
+  
+  updateStatus('PDF 比较模式已启动，按 ESC 退出');
+}
+
+async function renderComparePages(pageNum) {
+  const content1 = document.getElementById('compareContent1');
+  const content2 = document.getElementById('compareContent2');
+  
+  if (!content1 || !content2) return;
+  
+  content1.innerHTML = '<div class="spinner"></div>';
+  content2.innerHTML = '<div class="spinner"></div>';
+  
+  try {
+    const canvas1 = document.createElement('canvas');
+    const canvas2 = document.createElement('canvas');
+    
+    const lib = await initPDFJS();
+    
+    const fileData1 = await window.pdfAPI.readFile(compareFilePath);
+    const pdf1 = await lib.getDocument(new Uint8Array(fileData1)).promise;
+    const page1 = await pdf1.getPage(pageNum);
+    const viewport1 = page1.getViewport({ scale: 0.8 });
+    
+    canvas1.width = viewport1.width;
+    canvas1.height = viewport1.height;
+    await page1.render({
+      canvasContext: canvas1.getContext('2d'),
+      viewport: viewport1
+    }).promise;
+    
+    const fileData2 = await window.pdfAPI.readFile(currentPdfPath);
+    const pdf2 = await lib.getDocument(new Uint8Array(fileData2)).promise;
+    const page2 = await pdf2.getPage(pageNum);
+    const viewport2 = page2.getViewport({ scale: 0.8 });
+    
+    canvas2.width = viewport2.width;
+    canvas2.height = viewport2.height;
+    await page2.render({
+      canvasContext: canvas2.getContext('2d'),
+      viewport: viewport2
+    }).promise;
+    
+    content1.innerHTML = '';
+    content1.appendChild(canvas1);
+    
+    content2.innerHTML = '';
+    content2.appendChild(canvas2);
+    
+    document.querySelectorAll('.comparison-sync-indicator').forEach(el => {
+      el.textContent = `第 ${pageNum} 页`;
+    });
+    
+  } catch (error) {
+    console.error('Failed to render compare pages:', error);
+    content1.innerHTML = '<p style="color: red;">加载失败</p>';
+    content2.innerHTML = '<p style="color: red;">加载失败</p>';
+  }
+}
+
+function setupCompareSync() {
+  document.addEventListener('keydown', async (e) => {
+    if (!isFullscreenMode) return;
+    
+    if (e.key === 'Escape') {
+      exitFullscreen();
+      await reloadCurrentPDF();
+    } else if (e.key === 'ArrowLeft') {
+      const currentPage = parseInt(document.querySelector('.comparison-sync-indicator')?.textContent.match(/\d+/)?.[0] || '1');
+      if (currentPage > 1) {
+        await renderComparePages(currentPage - 1);
+      }
+    } else if (e.key === 'ArrowRight') {
+      const currentPage = parseInt(document.querySelector('.comparison-sync-indicator')?.textContent.match(/\d+/)?.[0] || '1');
+      await renderComparePages(currentPage + 1);
+    }
+  });
+}
+
+// ============================
+// Electronic Signature
+// ============================
+let signatureData = null;
+let signatureColor = '#000000';
+let signatureMode = 'draw';
+
+function openSignatureModal() {
+  const signatureModal = document.getElementById('signatureModal');
+  if (signatureModal) {
+    signatureModal.classList.add('active');
+    initSignatureCanvas();
+  }
+}
+
+function closeSignatureModalFunc() {
+  const signatureModal = document.getElementById('signatureModal');
+  if (signatureModal) {
+    signatureModal.classList.remove('active');
+  }
+}
+
+function initSignatureCanvas() {
+  const canvas = document.getElementById('signatureCanvas');
+  if (!canvas) return;
+  
+  const ctx = canvas.getContext('2d');
+  canvas.width = canvas.offsetWidth || 400;
+  canvas.height = 150;
+  
+  ctx.fillStyle = 'white';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.strokeStyle = signatureColor;
+  ctx.lineWidth = 2;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  
+  let isDrawing = false;
+  let lastX = 0;
+  let lastY = 0;
+  
+  canvas.onmousedown = (e) => {
+    isDrawing = true;
+    const rect = canvas.getBoundingClientRect();
+    lastX = e.clientX - rect.left;
+    lastY = e.clientY - rect.top;
+  };
+  
+  canvas.onmousemove = (e) => {
+    if (!isDrawing) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    
+    ctx.beginPath();
+    ctx.moveTo(lastX, lastY);
+    ctx.lineTo(x, y);
+    ctx.stroke();
+    
+    lastX = x;
+    lastY = y;
+  };
+  
+  canvas.onmouseup = () => isDrawing = false;
+  canvas.onmouseleave = () => isDrawing = false;
+}
+
+function clearSignatureCanvas() {
+  const canvas = document.getElementById('signatureCanvas');
+  if (!canvas) return;
+  
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = 'white';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.strokeStyle = signatureColor;
+  
+  const typeInput = document.getElementById('signatureTypeInput');
+  if (typeInput) typeInput.value = '';
+  
+  const uploadPreview = document.getElementById('signatureUploadPreview');
+  if (uploadPreview) {
+    uploadPreview.innerHTML = '<span style="color: var(--text-secondary); font-size: 12px;">未选择图片</span>';
+  }
+  
+  signatureData = null;
+}
+
+function switchSignatureTab(tab) {
+  signatureMode = tab;
+  
+  document.querySelectorAll('.signature-tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.tab === tab);
+  });
+  
+  document.getElementById('signatureDrawTab').style.display = tab === 'draw' ? 'block' : 'none';
+  document.getElementById('signatureTypeTab').style.display = tab === 'type' ? 'block' : 'none';
+  document.getElementById('signatureUploadTab').style.display = tab === 'upload' ? 'block' : 'none';
+}
+
+function updateSignatureColor(color) {
+  signatureColor = color;
+  
+  document.querySelectorAll('.signature-color-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.color === color);
+  });
+  
+  if (signatureMode === 'draw') {
+    const canvas = document.getElementById('signatureCanvas');
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      ctx.strokeStyle = color;
+    }
+  } else if (signatureMode === 'type') {
+    updateTypeSignaturePreview();
+  }
+}
+
+function updateTypeSignaturePreview() {
+  const input = document.getElementById('signatureTypeInput')?.value || '';
+  const preview = document.getElementById('signatureTypePreview');
+  
+  if (preview) {
+    preview.innerHTML = input ? `<span style="font-family: 'Brush Script MT', cursive; font-size: 24px; color: ${signatureColor};">${escapeHtml(input)}</span>` : '<span style="color: var(--text-secondary); font-size: 12px;">预览</span>';
+  }
+}
+
+async function uploadSignatureImage() {
+  const result = await window.pdfAPI.pickImage();
+  if (!result.canceled && result.filePaths.length > 0) {
+    const imagePath = result.filePaths[0];
+    const imageBuffer = await window.pdfAPI.readFile(imagePath);
+    const base64 = window.bufferHelper.toBase64(imageBuffer);
+    signatureData = `data:image/png;base64,${base64}`;
+    
+    const preview = document.getElementById('signatureUploadPreview');
+    if (preview) {
+      preview.innerHTML = `<img src="${signatureData}" style="max-width: 100%; max-height: 80px;" />`;
+    }
+  }
+}
+
+function confirmSignature() {
+  if (signatureMode === 'draw') {
+    const canvas = document.getElementById('signatureCanvas');
+    if (canvas) {
+      signatureData = canvas.toDataURL('image/png');
+    }
+  } else if (signatureMode === 'type') {
+    const input = document.getElementById('signatureTypeInput')?.value || '';
+    if (!input) {
+      alert('请输入签名文字');
+      return;
+    }
+    
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = 300;
+    tempCanvas.height = 80;
+    const ctx = tempCanvas.getContext('2d');
+    
+    ctx.fillStyle = 'white';
+    ctx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+    ctx.font = '32px "Brush Script MT", cursive';
+    ctx.fillStyle = signatureColor;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(input, tempCanvas.width / 2, tempCanvas.height / 2);
+    
+    signatureData = tempCanvas.toDataURL('image/png');
+  }
+  
+  if (!signatureData) {
+    alert('请创建签名');
+    return;
+  }
+  
+  closeSignatureModalFunc();
+  
+  if (pdfEditor) {
+    pdfEditor.setOptions({ currentImage: signatureData });
+    selectTool('image');
+    updateStatus('签名已创建，点击页面放置签名');
+  }
+}
+
+// ============================
+// Form Filling
+// ============================
+async function detectFormFields() {
+  if (!currentPdfPath) {
+    alert('请先打开 PDF 文件');
+    return;
+  }
+  
+  try {
+    const lib = await initPDFJS();
+    const fileData = await window.pdfAPI.readFile(currentPdfPath);
+    const pdf = await lib.getDocument(new Uint8Array(fileData)).promise;
+    
+    let formFields = [];
+    
+    for (let i = 1; i <= totalPages; i++) {
+      const page = await pdf.getPage(i);
+      const annotations = await page.getAnnotations();
+      
+      for (const annot of annotations) {
+        if (annot.subtype === 'Widget') {
+          formFields.push({
+            page: i,
+            id: annot.id,
+            type: annot.fieldType || 'text',
+            rect: annot.rect,
+            name: annot.fieldName || `Field_${annot.id}`
+          });
+        }
+      }
+    }
+    
+    if (formFields.length === 0) {
+      updateStatus('此 PDF 没有可填写的表单字段');
+      return;
+    }
+    
+    highlightFormFields(formFields);
+    updateStatus(`检测到 ${formFields.length} 个表单字段`);
+    
+  } catch (error) {
+    console.error('Failed to detect form fields:', error);
+    updateStatus('检测表单字段失败');
+  }
+}
+
+function highlightFormFields(fields) {
+  fields.forEach(field => {
+    const pageWrapper = document.querySelector(`[data-page="${field.page}"]`);
+    if (!pageWrapper) return;
+    
+    const editOverlay = pageWrapper.querySelector('.page-edit-overlay');
+    if (!editOverlay) return;
+    
+    const highlight = document.createElement('div');
+    highlight.className = 'form-field-highlight';
+    highlight.dataset.fieldId = field.id;
+    highlight.dataset.fieldType = field.type;
+    
+    const canvas = pageWrapper.querySelector('.page-canvas');
+    if (!canvas) return;
+    
+    const scale = currentZoom / 100;
+    const x = field.rect[0] * scale;
+    const y = canvas.height - (field.rect[3] * scale);
+    const width = (field.rect[2] - field.rect[0]) * scale;
+    const height = (field.rect[3] - field.rect[1]) * scale;
+    
+    highlight.style.left = `${x}px`;
+    highlight.style.top = `${y}px`;
+    highlight.style.width = `${width}px`;
+    highlight.style.height = `${height}px`;
+    
+    highlight.title = field.name;
+    
+    highlight.addEventListener('click', () => {
+      fillFormField(field, highlight);
+    });
+    
+    editOverlay.appendChild(highlight);
+  });
+}
+
+function fillFormField(field, element) {
+  if (field.type === 'text') {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'form-field-input';
+    input.style.left = element.style.left;
+    input.style.top = element.style.top;
+    input.style.width = element.style.width;
+    input.style.height = element.style.height;
+    input.placeholder = field.name;
+    
+    input.addEventListener('blur', () => {
+      if (input.value) {
+        element.classList.add('filled');
+      }
+      input.remove();
+    });
+    
+    element.parentElement.appendChild(input);
+    input.focus();
+  }
+}
+
+// Setup signature modal event listeners
+function setupSignatureModalEvents() {
+  document.querySelectorAll('.signature-tab').forEach(tab => {
+    tab.addEventListener('click', () => switchSignatureTab(tab.dataset.tab));
+  });
+  
+  document.querySelectorAll('.signature-color-btn').forEach(btn => {
+    btn.addEventListener('click', () => updateSignatureColor(btn.dataset.color));
+  });
+  
+  const typeInput = document.getElementById('signatureTypeInput');
+  if (typeInput) {
+    typeInput.addEventListener('input', updateTypeSignaturePreview);
+  }
+  
+  const uploadBtn = document.getElementById('uploadSignatureBtn');
+  if (uploadBtn) {
+    uploadBtn.addEventListener('click', uploadSignatureImage);
+  }
+}
+
+// Initialize additional event listeners
+function initAdditionalEventListeners() {
+  const selectCompareFile1Btn = document.getElementById('selectCompareFile1Btn');
+  if (selectCompareFile1Btn) {
+    selectCompareFile1Btn.addEventListener('click', selectCompareFile);
+  }
+  
+  const startCompareBtn = document.getElementById('startCompareBtn');
+  if (startCompareBtn) {
+    startCompareBtn.addEventListener('click', startCompare);
+  }
+  
+  const cancelCompareModal = document.getElementById('cancelCompareModal');
+  if (cancelCompareModal) {
+    cancelCompareModal.addEventListener('click', closeCompareModalFunc);
+  }
+  
+  const closeCompareModal = document.getElementById('closeCompareModal');
+  if (closeCompareModal) {
+    closeCompareModal.addEventListener('click', closeCompareModalFunc);
+  }
+  
+  const startSlideshowBtn = document.getElementById('startSlideshowBtn');
+  if (startSlideshowBtn) {
+    startSlideshowBtn.addEventListener('click', startSlideshow);
+  }
+  
+  const cancelSlideshowModal = document.getElementById('cancelSlideshowModal');
+  if (cancelSlideshowModal) {
+    cancelSlideshowModal.addEventListener('click', closeSlideshowModalFunc);
+  }
+  
+  const closeSlideshowModal = document.getElementById('closeSlideshowModal');
+  if (closeSlideshowModal) {
+    closeSlideshowModal.addEventListener('click', closeSlideshowModalFunc);
+  }
+  
+  const confirmSignatureBtn = document.getElementById('confirmSignatureBtn');
+  if (confirmSignatureBtn) {
+    confirmSignatureBtn.addEventListener('click', confirmSignature);
+  }
+  
+  const cancelSignatureModal = document.getElementById('cancelSignatureModal');
+  if (cancelSignatureModal) {
+    cancelSignatureModal.addEventListener('click', closeSignatureModalFunc);
+  }
+  
+  const closeSignatureModal = document.getElementById('closeSignatureModal');
+  if (closeSignatureModal) {
+    closeSignatureModal.addEventListener('click', closeSignatureModalFunc);
+  }
+  
+  const clearSignatureBtn = document.getElementById('clearSignatureBtn');
+  if (clearSignatureBtn) {
+    clearSignatureBtn.addEventListener('click', clearSignatureCanvas);
+  }
+  
+  setupSignatureModalEvents();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  setTimeout(initAdditionalEventListeners, 200);
 });
