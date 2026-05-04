@@ -1,6 +1,6 @@
 const { app, BrowserWindow, ipcMain, dialog, nativeImage } = require('electron');
 const path = require('path');
-const { mergePDFs, splitPDF, addWatermark, loadPDF, applyEdits, rotatePDF, deletePages, protectPDF, getBookmarks, addBookmarks, movePage, addPageNumbers, setPDFMetadata, insertPages, insertBlankPage, cropPages, getPageDimensions, compressPDF, imagesToPDF } = require('./pdf-utils');
+const { mergePDFs, splitPDF, addWatermark, loadPDF, applyEdits, rotatePDF, deletePages, protectPDF, getBookmarks, addBookmarks, movePage, addPageNumbers, setPDFMetadata, insertPages, insertBlankPage, cropPages, getPageDimensions, compressPDF, imagesToPDF, resizePages } = require('./pdf-utils');
 const OCREngine = require('./ocr-engine');
 const { validateString, validateArray, validateNumber, validateBuffer, validateObject } = require('./validation');
 const fs = require('fs').promises;
@@ -346,6 +346,16 @@ ipcMain.handle('pdf:imagesToPDF', safeIpcHandler('pdf:imagesToPDF', async (_, im
   validateArray(imagePaths, 'imagePaths');
   if (options !== undefined) validateObject(options, 'options');
   const result = await imagesToPDF(imagePaths, options);
+  return Array.from(result);
+}));
+
+// Resize pages
+ipcMain.handle('pdf:resizePages', safeIpcHandler('pdf:resizePages', async (_, filePath, pageNumbers, newSize, options) => {
+  validateFilePath(filePath);
+  validateArray(pageNumbers, 'pageNumbers');
+  validateObject(newSize, 'newSize');
+  if (options !== undefined) validateObject(options, 'options');
+  const result = await resizePages(filePath, pageNumbers, newSize, options);
   return Array.from(result);
 }));
 

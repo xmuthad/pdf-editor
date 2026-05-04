@@ -103,6 +103,13 @@ contextBridge.exposeInMainWorld('pdfAPI', {
     if (options !== undefined && (typeof options !== 'object' || options === null || Array.isArray(options))) throw new Error('options must be a valid object');
     return ipcRenderer.invoke('pdf:imagesToPDF', imagePaths, options);
   },
+  resizePages: (filePath, pageNumbers, newSize, options) => {
+    if (typeof filePath !== 'string' || !filePath) throw new Error('filePath must be a non-empty string');
+    if (!Array.isArray(pageNumbers)) throw new Error('pageNumbers must be an array');
+    if (typeof newSize !== 'object' || newSize === null || Array.isArray(newSize)) throw new Error('newSize must be a valid object');
+    if (options !== undefined && (typeof options !== 'object' || options === null || Array.isArray(options))) throw new Error('options must be a valid object');
+    return ipcRenderer.invoke('pdf:resizePages', filePath, pageNumbers, newSize, options);
+  },
   getSettings: () => ipcRenderer.invoke('settings:get'),
   setSettings: (settings) => {
     if (typeof settings !== 'object' || settings === null || Array.isArray(settings)) throw new Error('settings must be a valid object');

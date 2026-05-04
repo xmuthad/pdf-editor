@@ -443,6 +443,87 @@ async function imagesToPDF(imagePaths, options = {}) {
   return Buffer.from(pdfBytes);
 }
 
+async function resizePages(filePath, pageNumbers, newSize, options = {}) {
+  validateString(filePath, 'filePath');
+  validateArray(pageNumbers, 'pageNumbers');
+  validateObject(newSize, 'newSize');
+
+  let fileData;
+  let pdfDoc;
+
+  try {
+    fileData = await fs.readFile(filePath);
+    pdfDoc = await PDFDocument.load(fileData);
+  } catch (error) {
+    throw new Error(`Failed to read PDF file: ${error.message}`);
+  }
+
+  const pages = pdfDoc.getPages();
+  const totalPages = pages.length;
+
+  // Page sizes in points
+  const standardSizes = {
+    a4: { width: 595.28, height: 841.89 },
+    letter: { width: 612, height: 792 },
+    legal: { width: 612, height: 1008 },
+    a3: { width: 841.89, height: 1190.55 },
+    a5: { width: 420.94, height: 595.28 }
+  };
+
+  let targetWidth, targetHeight;
+
+  if (typeof newSize === 'string') {
+    const size = standardSizes[newSize.toLowerCase()];
+    if (!size) {
+      throw new Error(`Unknown page size: ${newSize}`);
+    }
+    targetWidth = size.width;
+    targetHeight = size.height;
+  } else {
+    targetWidth = newSize.width;
+    targetHeight = newSize.height;
+  }
+
+  // Handle orientation
+  if (options.orientation === 'landscape') {
+    [targetWidth, targetHeight] = [targetHeight, targetWidth];
+  }
+
+  for (const pageNum of pageNumbers) {
+    const pageIndex = pageNum - 1;
+    
+    if (pageIndex < 0 || pageIndex >= totalPages) {
+      throw new Error(`Invalid page number: ${pageNum}`);
+    }
+
+    const page = pages[pageIndex];
+    const { width: oldWidth, height: oldHeight } = page.getSize();
+
+    // Calculate scale to fit content
+    const scaleX = targetWidth / oldWidth;
+    const scaleY = targetHeight / oldHeight;
+    const scale = options.fit === 'contain' ? Math.min(scaleX, scaleY) : Math.max(scaleX, scaleY);
+
+    // Set new page size
+    page.setSize(targetWidth, targetHeight);
+
+    // Scale content if needed
+    if (options.scaleContent !== false) {
+      const contentScale = options.fit === 'fill' ? Math.max(scaleX, scaleY) : Math.min(scaleX, scaleY);
+      
+      // Center content
+      const offsetX = (targetWidth - oldWidth * contentScale) / 2;
+      const offsetY = (targetHeight - oldHeight * contentScale) / 2;
+
+      // Scale and translate page content
+      page.scale(contentScale, contentScale);
+      page.translateContent(offsetX, offsetY);
+    }
+  }
+
+  return Buffer.from(await pdfDoc.save());
+}
+
 async function applyEdits(filePath, operations) {
   validateString(filePath, 'filePath');
   validateArray(operations, 'operations');
@@ -1302,5 +1383,6 @@ module.exports = {
   getPageDimensions,
   compressPDF,
   imagesToPDF,
+  resizePages,
   _resetMergePromise
 };

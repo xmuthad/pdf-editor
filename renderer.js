@@ -1139,6 +1139,10 @@ async function handleThumbnailContextAction(action) {
       await openCropModal(pageNum);
       break;
 
+    case 'resize':
+      await openResizeModal(pageNum);
+      break;
+
     case 'rotateLeft':
       await handleRotatePage(-90, [pageNum]);
       break;
@@ -2089,6 +2093,26 @@ function renderOutline() {
   if (closeCropModal) closeCropModal.addEventListener('click', closeCropModalFunc);
   if (cancelCropModal) cancelCropModal.addEventListener('click', closeCropModalFunc);
   if (confirmCropBtn) confirmCropBtn.addEventListener('click', performCrop);
+
+  // Resize Page modal event listeners
+  const resizePageModal = document.getElementById('resizePageModal');
+  const closeResizeModal = document.getElementById('closeResizeModal');
+  const cancelResizeModal = document.getElementById('cancelResizeModal');
+  const confirmResizeBtn = document.getElementById('confirmResizeBtn');
+  let resizeTargetPage = 1;
+
+  async function openResizeModal(pageNum) {
+    resizeTargetPage = pageNum;
+    if (resizePageModal) resizePageModal.classList.add('active');
+  }
+
+  function closeResizeModalFunc() {
+    if (resizePageModal) resizePageModal.classList.remove('active');
+  }
+
+  if (closeResizeModal) closeResizeModal.addEventListener('click', closeResizeModalFunc);
+  if (cancelResizeModal) cancelResizeModal.addEventListener('click', closeResizeModalFunc);
+  if (confirmResizeBtn) confirmResizeBtn.addEventListener('click', performResize);
 
    // Delete Page modal event listeners
    const deletePageModal = document.getElementById('deletePageModal');
@@ -4155,6 +4179,40 @@ async function performCrop() {
     console.error('Failed to crop page:', error);
     handleError(error);
     updateStatus('裁剪页面失败');
+  }
+}
+
+async function performResize() {
+  if (!currentPdfPath) return;
+
+  try {
+    const pageSize = document.getElementById('resizePageSize')?.value || 'a4';
+    const orientation = document.getElementById('resizeOrientation')?.value || 'portrait';
+    const fit = document.getElementById('resizeFit')?.value || 'contain';
+
+    const pageNumbers = [resizeTargetPage];
+    const newSize = pageSize;
+
+    updateStatus(`正在调整第 ${resizeTargetPage} 页尺寸...`);
+    const result = await window.pdfAPI.resizePages(currentPdfPath, pageNumbers, newSize, {
+      orientation,
+      fit
+    });
+
+    // Save back to the original file
+    await window.pdfAPI.writeFile(currentPdfPath, result);
+    updateStatus(`第 ${resizeTargetPage} 页尺寸已调整`);
+
+    // Close modal
+    const resizePageModal = document.getElementById('resizePageModal');
+    if (resizePageModal) resizePageModal.classList.remove('active');
+
+    // Reload the PDF
+    await reloadCurrentPDF();
+  } catch (error) {
+    console.error('Failed to resize page:', error);
+    handleError(error);
+    updateStatus('调整页面尺寸失败');
   }
 }
 

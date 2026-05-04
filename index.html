@@ -800,6 +800,47 @@
     </div>
   </div>
 
+  <!-- Resize Page Modal -->
+  <div class="modal-overlay" id="resizePageModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>调整页面尺寸</h3>
+        <button class="modal-close" id="closeResizeModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="resizePageSize">页面尺寸</label>
+          <select id="resizePageSize" class="form-input">
+            <option value="a4">A4 (210 × 297 mm)</option>
+            <option value="letter">Letter (8.5 × 11 in)</option>
+            <option value="legal">Legal (8.5 × 14 in)</option>
+            <option value="a3">A3 (297 × 420 mm)</option>
+            <option value="a5">A5 (148 × 210 mm)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="resizeOrientation">方向</label>
+          <select id="resizeOrientation" class="form-input">
+            <option value="portrait">纵向</option>
+            <option value="landscape">横向</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="resizeFit">内容适配</label>
+          <select id="resizeFit" class="form-input">
+            <option value="contain">适应页面（保持比例）</option>
+            <option value="fill">填充页面</option>
+          </select>
+        </div>
+        <p class="form-hint">将调整选中页面的尺寸。内容将根据选择的适配方式自动缩放。</p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" id="cancelResizeModal">取消</button>
+        <button class="btn btn-primary" id="confirmResizeBtn">确定调整</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Delete Page Modal -->
   <div class="modal-overlay" id="deletePageModal">
     <div class="modal">
@@ -842,6 +883,7 @@
     <div class="context-menu-item" data-action="insertFromPdf">从其他PDF插入页面</div>
     <div class="context-menu-divider"></div>
     <div class="context-menu-item" data-action="crop">裁剪此页</div>
+    <div class="context-menu-item" data-action="resize">调整页面尺寸</div>
     <div class="context-menu-divider"></div>
     <div class="context-menu-item" data-action="rotateLeft">向左旋转 90°</div>
     <div class="context-menu-item" data-action="rotateRight">向右旋转 90°</div>
