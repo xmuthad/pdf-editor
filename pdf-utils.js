@@ -241,6 +241,70 @@ async function insertBlankPage(filePath, insertAfterPage, width, height) {
   return Buffer.from(await pdfDoc.save());
 }
 
+async function cropPages(filePath, pageCrops) {
+  validateString(filePath, 'filePath');
+  validateArray(pageCrops, 'pageCrops');
+
+  let fileData;
+  let pdfDoc;
+
+  try {
+    fileData = await fs.readFile(filePath);
+    pdfDoc = await PDFDocument.load(fileData);
+  } catch (error) {
+    throw new Error(`Failed to read PDF file: ${error.message}`);
+  }
+
+  const pages = pdfDoc.getPages();
+  const pageCount = pages.length;
+
+  for (const crop of pageCrops) {
+    const pageIndex = crop.page - 1;
+    
+    if (pageIndex < 0 || pageIndex >= pageCount) {
+      throw new Error(`Invalid page number: ${crop.page}`);
+    }
+
+    const page = pages[pageIndex];
+    const { width, height } = page.getSize();
+
+    const x = Math.max(0, Math.min(crop.x || 0, width));
+    const y = Math.max(0, Math.min(crop.y || 0, height));
+    const cropWidth = Math.max(1, Math.min(crop.width || width - x, width - x));
+    const cropHeight = Math.max(1, Math.min(crop.height || height - y, height - y));
+
+    page.setCropBox(x, y, cropWidth, cropHeight);
+  }
+
+  return Buffer.from(await pdfDoc.save());
+}
+
+async function getPageDimensions(filePath, pageNum) {
+  validateString(filePath, 'filePath');
+  validateNumber(pageNum, 'pageNum', 1, 100000);
+
+  let fileData;
+  let pdfDoc;
+
+  try {
+    fileData = await fs.readFile(filePath);
+    pdfDoc = await PDFDocument.load(fileData);
+  } catch (error) {
+    throw new Error(`Failed to read PDF file: ${error.message}`);
+  }
+
+  const pages = pdfDoc.getPages();
+  
+  if (pageNum < 1 || pageNum > pages.length) {
+    throw new Error(`Invalid page number: ${pageNum}. PDF has ${pages.length} pages.`);
+  }
+
+  const page = pages[pageNum - 1];
+  const { width, height } = page.getSize();
+
+  return { width, height, pageNum };
+}
+
 async function applyEdits(filePath, operations) {
   validateString(filePath, 'filePath');
   validateArray(operations, 'operations');
@@ -1096,5 +1160,7 @@ module.exports = {
   setPDFMetadata,
   insertPages,
   insertBlankPage,
+  cropPages,
+  getPageDimensions,
   _resetMergePromise
 };

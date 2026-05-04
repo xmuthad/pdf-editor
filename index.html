@@ -757,6 +757,46 @@
     </div>
   </div>
 
+  <!-- Crop Page Modal -->
+  <div class="modal-overlay" id="cropPageModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>裁剪页面</h3>
+        <button class="modal-close" id="closeCropModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p>设置裁剪区域（单位：点，1点 ≈ 0.35毫米）</p>
+        <div class="form-group">
+          <label for="cropPageNum">页码</label>
+          <input type="number" id="cropPageNum" class="form-input" min="1" readonly />
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+          <div class="form-group">
+            <label for="cropX">左边距 (X)</label>
+            <input type="number" id="cropX" class="form-input" min="0" value="0" />
+          </div>
+          <div class="form-group">
+            <label for="cropY">底边距 (Y)</label>
+            <input type="number" id="cropY" class="form-input" min="0" value="0" />
+          </div>
+          <div class="form-group">
+            <label for="cropWidth">宽度</label>
+            <input type="number" id="cropWidth" class="form-input" min="1" />
+          </div>
+          <div class="form-group">
+            <label for="cropHeight">高度</label>
+            <input type="number" id="cropHeight" class="form-input" min="1" />
+          </div>
+        </div>
+        <p class="form-hint">原始尺寸：<span id="originalPageSize">--</span></p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" id="cancelCropModal">取消</button>
+        <button class="btn btn-primary" id="confirmCropBtn">确定裁剪</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Delete Page Modal -->
   <div class="modal-overlay" id="deletePageModal">
     <div class="modal">
@@ -797,6 +837,8 @@
     <div class="context-menu-item" data-action="insertBlankBefore">在此页前插入空白页</div>
     <div class="context-menu-item" data-action="insertBlankAfter">在此页后插入空白页</div>
     <div class="context-menu-item" data-action="insertFromPdf">从其他PDF插入页面</div>
+    <div class="context-menu-divider"></div>
+    <div class="context-menu-item" data-action="crop">裁剪此页</div>
     <div class="context-menu-divider"></div>
     <div class="context-menu-item" data-action="rotateLeft">向左旋转 90°</div>
     <div class="context-menu-item" data-action="rotateRight">向右旋转 90°</div>

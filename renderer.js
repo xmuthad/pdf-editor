@@ -1123,6 +1123,10 @@ async function handleThumbnailContextAction(action) {
       await handleInsertFromPdf(pageNum);
       break;
 
+    case 'crop':
+      await openCropModal(pageNum);
+      break;
+
     case 'rotateLeft':
       await handleRotatePage(-90, [pageNum]);
       break;
@@ -2034,6 +2038,45 @@ function renderOutline() {
   if (closePageNumbersModal) closePageNumbersModal.addEventListener('click', closePageNumbersModalFunc);
   if (cancelPageNumbersModal) cancelPageNumbersModal.addEventListener('click', closePageNumbersModalFunc);
   if (confirmPageNumbersBtn) confirmPageNumbersBtn.addEventListener('click', performAddPageNumbers);
+
+  // Crop Page modal event listeners
+  const cropPageModal = document.getElementById('cropPageModal');
+  const closeCropModal = document.getElementById('closeCropModal');
+  const cancelCropModal = document.getElementById('cancelCropModal');
+  const confirmCropBtn = document.getElementById('confirmCropBtn');
+  let cropTargetPage = 1;
+
+  async function openCropModal(pageNum) {
+    cropTargetPage = pageNum;
+    const cropPageNumInput = document.getElementById('cropPageNum');
+    if (cropPageNumInput) cropPageNumInput.value = pageNum;
+
+    // Get page dimensions
+    try {
+      const dims = await window.pdfAPI.getPageDimensions(currentPdfPath, pageNum);
+      const cropWidthInput = document.getElementById('cropWidth');
+      const cropHeightInput = document.getElementById('cropHeight');
+      const originalPageSize = document.getElementById('originalPageSize');
+
+      if (cropWidthInput) cropWidthInput.value = Math.round(dims.width);
+      if (cropHeightInput) cropHeightInput.value = Math.round(dims.height);
+      if (originalPageSize) {
+        originalPageSize.textContent = `${Math.round(dims.width)} × ${Math.round(dims.height)} 点`;
+      }
+    } catch (error) {
+      console.error('Failed to get page dimensions:', error);
+    }
+
+    if (cropPageModal) cropPageModal.classList.add('active');
+  }
+
+  function closeCropModalFunc() {
+    if (cropPageModal) cropPageModal.classList.remove('active');
+  }
+
+  if (closeCropModal) closeCropModal.addEventListener('click', closeCropModalFunc);
+  if (cancelCropModal) cancelCropModal.addEventListener('click', closeCropModalFunc);
+  if (confirmCropBtn) confirmCropBtn.addEventListener('click', performCrop);
 
    // Delete Page modal event listeners
    const deletePageModal = document.getElementById('deletePageModal');
@@ -4063,6 +4106,43 @@ async function handleInsertFromPdf(insertAfterPage) {
     console.error('Failed to insert pages from PDF:', error);
     handleError(error);
     updateStatus('插入页面失败');
+  }
+}
+
+async function performCrop() {
+  if (!currentPdfPath) return;
+
+  try {
+    const pageNum = parseInt(document.getElementById('cropPageNum')?.value) || 1;
+    const x = parseFloat(document.getElementById('cropX')?.value) || 0;
+    const y = parseFloat(document.getElementById('cropY')?.value) || 0;
+    const width = parseFloat(document.getElementById('cropWidth')?.value);
+    const height = parseFloat(document.getElementById('cropHeight')?.value);
+
+    if (!width || !height || width <= 0 || height <= 0) {
+      alert('请输入有效的裁剪尺寸');
+      return;
+    }
+
+    const pageCrops = [{ page: pageNum, x, y, width, height }];
+
+    updateStatus(`正在裁剪第 ${pageNum} 页...`);
+    const result = await window.pdfAPI.cropPages(currentPdfPath, pageCrops);
+
+    // Save back to the original file
+    await window.pdfAPI.writeFile(currentPdfPath, Array.from(result));
+    updateStatus(`第 ${pageNum} 页已裁剪`);
+
+    // Close modal
+    const cropPageModal = document.getElementById('cropPageModal');
+    if (cropPageModal) cropPageModal.classList.remove('active');
+
+    // Reload the PDF
+    await reloadCurrentPDF();
+  } catch (error) {
+    console.error('Failed to crop page:', error);
+    handleError(error);
+    updateStatus('裁剪页面失败');
   }
 }
 

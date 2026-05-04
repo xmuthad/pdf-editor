@@ -1,6 +1,6 @@
 const { app, BrowserWindow, ipcMain, dialog, nativeImage } = require('electron');
 const path = require('path');
-const { mergePDFs, splitPDF, addWatermark, loadPDF, applyEdits, rotatePDF, deletePages, protectPDF, getBookmarks, addBookmarks, movePage, addPageNumbers, setPDFMetadata, insertPages, insertBlankPage } = require('./pdf-utils');
+const { mergePDFs, splitPDF, addWatermark, loadPDF, applyEdits, rotatePDF, deletePages, protectPDF, getBookmarks, addBookmarks, movePage, addPageNumbers, setPDFMetadata, insertPages, insertBlankPage, cropPages, getPageDimensions } = require('./pdf-utils');
 const OCREngine = require('./ocr-engine');
 const { validateString, validateArray, validateNumber, validateBuffer, validateObject } = require('./validation');
 const fs = require('fs').promises;
@@ -304,6 +304,20 @@ ipcMain.handle('pdf:insertBlankPage', safeIpcHandler('pdf:insertBlankPage', (_, 
   validateFilePath(filePath);
   validateNumber(insertAfterPage, 'insertAfterPage', 0, 100000);
   return insertBlankPage(filePath, insertAfterPage, width, height);
+}));
+
+// Crop pages
+ipcMain.handle('pdf:cropPages', safeIpcHandler('pdf:cropPages', (_, filePath, pageCrops) => {
+  validateFilePath(filePath);
+  validateArray(pageCrops, 'pageCrops');
+  return cropPages(filePath, pageCrops);
+}));
+
+// Get page dimensions
+ipcMain.handle('pdf:getPageDimensions', safeIpcHandler('pdf:getPageDimensions', (_, filePath, pageNum) => {
+  validateFilePath(filePath);
+  validateNumber(pageNum, 'pageNum', 1, 100000);
+  return getPageDimensions(filePath, pageNum);
 }));
 
 // Settings IPC handlers
