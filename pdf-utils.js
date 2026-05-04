@@ -341,6 +341,108 @@ async function compressPDF(filePath, options = {}) {
   };
 }
 
+async function imagesToPDF(imagePaths, options = {}) {
+  validateArray(imagePaths, 'imagePaths');
+
+  if (imagePaths.length === 0) {
+    throw new Error('No images provided');
+  }
+
+  const pdfDoc = await PDFDocument.create();
+  const pageSize = options.pageSize || 'a4';
+  const orientation = options.orientation || 'portrait';
+
+  // Page sizes in points (1 inch = 72 points)
+  const pageSizes = {
+    a4: { width: 595.28, height: 841.89 },
+    letter: { width: 612, height: 792 },
+    legal: { width: 612, height: 1008 },
+    a3: { width: 841.89, height: 1190.55 }
+  };
+
+  let defaultWidth, defaultHeight;
+  if (pageSize === 'fit') {
+    // Will be determined by image size
+    defaultWidth = 595.28;
+    defaultHeight = 841.89;
+  } else {
+    const size = pageSizes[pageSize] || pageSizes.a4;
+    defaultWidth = size.width;
+    defaultHeight = size.height;
+  }
+
+  for (const imagePath of imagePaths) {
+    try {
+      const imageBytes = await fs.readFile(imagePath);
+      let image;
+
+      const ext = imagePath.toLowerCase().split('.').pop();
+      
+      if (ext === 'png') {
+        image = await pdfDoc.embedPng(imageBytes);
+      } else if (ext === 'jpg' || ext === 'jpeg') {
+        image = await pdfDoc.embedJpg(imageBytes);
+      } else {
+        console.warn(`Unsupported image format: ${ext}, skipping ${imagePath}`);
+        continue;
+      }
+
+      const { width: imgWidth, height: imgHeight } = image.scale(1);
+
+      let pageWidth, pageHeight;
+      let drawWidth, drawHeight;
+      let x, y;
+
+      if (pageSize === 'fit') {
+        // Use image dimensions as page size
+        pageWidth = imgWidth;
+        pageHeight = imgHeight;
+        drawWidth = imgWidth;
+        drawHeight = imgHeight;
+        x = 0;
+        y = 0;
+      } else {
+        pageWidth = defaultWidth;
+        pageHeight = defaultHeight;
+
+        // Swap dimensions for landscape
+        if (orientation === 'landscape') {
+          [pageWidth, pageHeight] = [pageHeight, pageWidth];
+        }
+
+        // Scale image to fit page with margins
+        const margin = options.margin || 20;
+        const maxWidth = pageWidth - margin * 2;
+        const maxHeight = pageHeight - margin * 2;
+
+        const scaleX = maxWidth / imgWidth;
+        const scaleY = maxHeight / imgHeight;
+        const scale = Math.min(scaleX, scaleY, 1);
+
+        drawWidth = imgWidth * scale;
+        drawHeight = imgHeight * scale;
+
+        // Center image on page
+        x = (pageWidth - drawWidth) / 2;
+        y = (pageHeight - drawHeight) / 2;
+      }
+
+      const page = pdfDoc.addPage([pageWidth, pageHeight]);
+      page.drawImage(image, {
+        x,
+        y,
+        width: drawWidth,
+        height: drawHeight
+      });
+    } catch (error) {
+      console.error(`Failed to add image ${imagePath}:`, error.message);
+    }
+  }
+
+  const pdfBytes = await pdfDoc.save();
+  return Buffer.from(pdfBytes);
+}
+
 async function applyEdits(filePath, operations) {
   validateString(filePath, 'filePath');
   validateArray(operations, 'operations');
@@ -1199,5 +1301,6 @@ module.exports = {
   cropPages,
   getPageDimensions,
   compressPDF,
+  imagesToPDF,
   _resetMergePromise
 };

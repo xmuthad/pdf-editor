@@ -1,6 +1,6 @@
 const { app, BrowserWindow, ipcMain, dialog, nativeImage } = require('electron');
 const path = require('path');
-const { mergePDFs, splitPDF, addWatermark, loadPDF, applyEdits, rotatePDF, deletePages, protectPDF, getBookmarks, addBookmarks, movePage, addPageNumbers, setPDFMetadata, insertPages, insertBlankPage, cropPages, getPageDimensions, compressPDF } = require('./pdf-utils');
+const { mergePDFs, splitPDF, addWatermark, loadPDF, applyEdits, rotatePDF, deletePages, protectPDF, getBookmarks, addBookmarks, movePage, addPageNumbers, setPDFMetadata, insertPages, insertBlankPage, cropPages, getPageDimensions, compressPDF, imagesToPDF } = require('./pdf-utils');
 const OCREngine = require('./ocr-engine');
 const { validateString, validateArray, validateNumber, validateBuffer, validateObject } = require('./validation');
 const fs = require('fs').promises;
@@ -192,6 +192,14 @@ ipcMain.handle('file:pickPDF', safeIpcHandler('file:pickPDF', async () => {
   return result;
 }));
 
+// Folder picker
+ipcMain.handle('file:pickFolder', safeIpcHandler('file:pickFolder', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openDirectory', 'createDirectory']
+  });
+  return result;
+}));
+
 // Read file for PDF.js
 ipcMain.handle('pdf:readFile', safeIpcHandler('pdf:readFile', async (_, filePath) => {
   const data = await fs.readFile(validateFilePath(filePath));
@@ -331,6 +339,14 @@ ipcMain.handle('pdf:compress', safeIpcHandler('pdf:compress', async (_, filePath
     compressedSize: result.compressedSize,
     compressionRatio: result.compressionRatio
   };
+}));
+
+// Images to PDF
+ipcMain.handle('pdf:imagesToPDF', safeIpcHandler('pdf:imagesToPDF', async (_, imagePaths, options) => {
+  validateArray(imagePaths, 'imagePaths');
+  if (options !== undefined) validateObject(options, 'options');
+  const result = await imagesToPDF(imagePaths, options);
+  return Array.from(result);
 }));
 
 // Settings IPC handlers

@@ -922,6 +922,14 @@ function initEventListeners() {
   const quickCompressBtn = document.getElementById('quickCompressBtn');
   if (quickCompressBtn) quickCompressBtn.addEventListener('click', handleCompressPDF);
 
+  // Export as images
+  const quickExportImagesBtn = document.getElementById('quickExportImagesBtn');
+  if (quickExportImagesBtn) quickExportImagesBtn.addEventListener('click', handleExportImages);
+
+  // Images to PDF
+  const quickImagesToPdfBtn = document.getElementById('quickImagesToPdfBtn');
+  if (quickImagesToPdfBtn) quickImagesToPdfBtn.addEventListener('click', handleImagesToPdf);
+
   // PDF Properties
   const savePropertiesBtn = document.getElementById('savePropertiesBtn');
   if (savePropertiesBtn) savePropertiesBtn.addEventListener('click', handleSaveProperties);
@@ -4175,6 +4183,130 @@ async function handleCompressPDF() {
     console.error('Failed to compress PDF:', error);
     handleError(error);
     updateStatus('压缩 PDF 失败');
+  }
+}
+
+async function handleExportImages() {
+  if (!currentPdfPath) {
+    alert('请先打开 PDF 文件');
+    return;
+  }
+
+  try {
+    const pdf = await getOrLoadPdfDocument(currentPdfPath);
+    if (!pdf) {
+      alert('无法加载 PDF 文件');
+      return;
+    }
+
+    // Ask user for format
+    const format = await askExportFormat();
+    if (!format) return;
+
+    const scale = format.scale || 2;
+    const imageType = format.type || 'png';
+
+    // Ask for save directory
+    const saveResult = await window.pdfAPI.pickFolder();
+    if (saveResult.canceled || !saveResult.filePaths || saveResult.filePaths.length === 0) {
+      return;
+    }
+
+    const saveDir = saveResult.filePaths[0];
+    const baseName = currentPdfPath.split('/').pop().replace('.pdf', '');
+
+    updateStatus(`正在导出 ${totalPages} 页为图片...`);
+
+    let exportedCount = 0;
+    for (let i = 1; i <= totalPages; i++) {
+      try {
+        const page = await pdf.getPage(i);
+        const viewport = page.getViewport({ scale });
+
+        // Create canvas
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+
+        // Render page to canvas
+        await page.render({
+          canvasContext: context,
+          viewport: viewport
+        }).promise;
+
+        // Convert to image
+        const mimeType = imageType === 'jpeg' ? 'image/jpeg' : 'image/png';
+        const quality = imageType === 'jpeg' ? 0.92 : undefined;
+        const dataUrl = canvas.toDataURL(mimeType, quality);
+        const base64Data = dataUrl.split(',')[1];
+        const buffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+
+        // Save image
+        const ext = imageType === 'jpeg' ? 'jpg' : 'png';
+        const fileName = `${baseName}_page_${String(i).padStart(3, '0')}.${ext}`;
+        const filePath = `${saveDir}/${fileName}`;
+
+        await window.pdfAPI.writeFile(filePath, Array.from(buffer));
+        exportedCount++;
+
+        updateStatus(`正在导出: ${exportedCount}/${totalPages}`);
+      } catch (pageError) {
+        console.error(`Failed to export page ${i}:`, pageError);
+      }
+    }
+
+    updateStatus(`已导出 ${exportedCount} 张图片到 ${saveDir}`);
+  } catch (error) {
+    console.error('Failed to export images:', error);
+    handleError(error);
+    updateStatus('导出图片失败');
+  }
+}
+
+async function askExportFormat() {
+  return new Promise((resolve) => {
+    const choice = prompt('选择导出格式:\n1. PNG (高质量)\n2. JPEG (较小文件)\n\n输入 1 或 2:', '1');
+    if (choice === null) {
+      resolve(null);
+      return;
+    }
+
+    if (choice === '2') {
+      resolve({ type: 'jpeg', scale: 2 });
+    } else {
+      resolve({ type: 'png', scale: 2 });
+    }
+  });
+}
+
+async function handleImagesToPdf() {
+  try {
+    // Open file picker to select images
+    const result = await window.pdfAPI.pickImage();
+    if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
+      return;
+    }
+
+    const imagePaths = result.filePaths;
+    updateStatus(`正在将 ${imagePaths.length} 张图片转换为 PDF...`);
+
+    // Convert images to PDF
+    const pdfBuffer = await window.pdfAPI.imagesToPDF(imagePaths, {
+      pageSize: 'fit',
+      margin: 0
+    });
+
+    // Save the PDF
+    const saveResult = await window.pdfAPI.saveDialog('images.pdf');
+    if (!saveResult.canceled && saveResult.filePath) {
+      await window.pdfAPI.writeFile(saveResult.filePath, pdfBuffer);
+      updateStatus(`已将 ${imagePaths.length} 张图片转换为 PDF`);
+    }
+  } catch (error) {
+    console.error('Failed to convert images to PDF:', error);
+    handleError(error);
+    updateStatus('图片转 PDF 失败');
   }
 }
 

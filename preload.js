@@ -37,6 +37,7 @@ contextBridge.exposeInMainWorld('pdfAPI', {
     return ipcRenderer.invoke('file:write', filePath, buffer);
   },
   pickImage: () => ipcRenderer.invoke('file:pickImage'),
+  pickFolder: () => ipcRenderer.invoke('file:pickFolder'),
   readFile: (filePath) => {
     if (typeof filePath !== 'string' || !filePath) throw new Error('filePath must be a non-empty string');
     return ipcRenderer.invoke('pdf:readFile', filePath);
@@ -96,6 +97,11 @@ contextBridge.exposeInMainWorld('pdfAPI', {
     if (typeof filePath !== 'string' || !filePath) throw new Error('filePath must be a non-empty string');
     if (options !== undefined && (typeof options !== 'object' || options === null || Array.isArray(options))) throw new Error('options must be a valid object');
     return ipcRenderer.invoke('pdf:compress', filePath, options);
+  },
+  imagesToPDF: (imagePaths, options) => {
+    if (!Array.isArray(imagePaths)) throw new Error('imagePaths must be an array');
+    if (options !== undefined && (typeof options !== 'object' || options === null || Array.isArray(options))) throw new Error('options must be a valid object');
+    return ipcRenderer.invoke('pdf:imagesToPDF', imagePaths, options);
   },
   getSettings: () => ipcRenderer.invoke('settings:get'),
   setSettings: (settings) => {
