@@ -732,6 +732,30 @@ body {
   box-shadow: 0 0 0 2px rgba(231, 76, 60, 0.3);
 }
 
+.thumbnail-item.dragging {
+  opacity: 0.5;
+  border-style: dashed;
+  border-color: var(--primary-color);
+}
+
+.thumbnail-item.drop-above {
+  border-top: 3px solid var(--primary-color);
+  margin-top: -1px;
+}
+
+.thumbnail-item.drop-below {
+  border-bottom: 3px solid var(--primary-color);
+  margin-bottom: -1px;
+}
+
+.thumbnail-placeholder {
+  height: 100px;
+  background: rgba(20, 115, 230, 0.1);
+  border: 2px dashed var(--primary-color);
+  border-radius: 6px;
+  margin: 6px 0;
+}
+
 .thumbnail-canvas {
   width: 100%;
   height: auto;
@@ -1867,6 +1891,73 @@ textarea.form-input {
   background: rgba(20, 115, 230, 0.2);
   border: 2px dashed var(--primary-color);
   pointer-events: none;
+}
+
+/* ============================
+   Context Menu
+   ============================ */
+.context-menu {
+  position: fixed;
+  background: var(--bg-dark);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 4px 0;
+  min-width: 160px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  z-index: 10000;
+  display: none;
+}
+
+.context-menu.visible {
+  display: block;
+}
+
+.context-menu-item {
+  padding: 8px 16px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.context-menu-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.context-menu-item.context-menu-item-danger {
+  color: var(--danger-color);
+}
+
+.context-menu-item.context-menu-item-danger:hover {
+  background: var(--danger-color);
+  color: white;
+}
+
+.context-menu-item.context-menu-item-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.context-menu-item.context-menu-item-disabled:hover {
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.context-menu-divider {
+  height: 1px;
+  background: var(--border-color);
+  margin: 4px 0;
+}
+
+.context-menu-item .shortcut {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-secondary);
+  opacity: 0.7;
 }
 
 /* ============================

@@ -958,8 +958,421 @@ function initEventListeners() {
   const protectPdfBtn = document.getElementById('protectPdfBtn');
   if (protectPdfBtn) protectPdfBtn.addEventListener('click', handleProtectPDF);
 
+  setupContextMenu();
+
   // Tool options
   setupToolOptions();
+}
+
+let contextMenuState = {
+  menu: null,
+  targetPage: -1,
+  targetOutlineIndex: -1,
+  selectedPages: new Set()
+};
+
+function setupContextMenu() {
+  contextMenuState.menu = document.getElementById('thumbnailContextMenu');
+
+  document.addEventListener('contextmenu', handleContextMenu);
+  document.addEventListener('click', hideContextMenu);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') hideContextMenu();
+  });
+
+  document.querySelectorAll('.context-menu').forEach(menu => {
+    menu.addEventListener('click', handleContextMenuClick);
+  });
+}
+
+function handleContextMenu(e) {
+  const thumbnailItem = e.target.closest('.thumbnail-item');
+  const outlineItem = e.target.closest('.outline-item');
+
+  if (thumbnailItem && currentPdfPath) {
+    e.preventDefault();
+    const pageNum = parseInt(thumbnailItem.dataset.page);
+    showThumbnailContextMenu(e.clientX, e.clientY, pageNum);
+  } else if (outlineItem) {
+    e.preventDefault();
+    const index = parseInt(outlineItem.dataset.index);
+    showOutlineContextMenu(e.clientX, e.clientY, index);
+  }
+}
+
+function showThumbnailContextMenu(x, y, pageNum) {
+  const menu = document.getElementById('thumbnailContextMenu');
+  if (!menu) return;
+
+  contextMenuState.targetPage = pageNum;
+
+  const hasMultipleSelected = contextMenuState.selectedPages.size > 1;
+  const deleteItem = menu.querySelector('[data-action="delete"]');
+  if (deleteItem) {
+    deleteItem.textContent = hasMultipleSelected ? `删除选中的 ${contextMenuState.selectedPages.size} 页` : '删除此页';
+  }
+
+  showMenuAtPosition(menu, x, y);
+}
+
+function showOutlineContextMenu(x, y, index) {
+  const menu = document.getElementById('outlineContextMenu');
+  if (!menu) return;
+
+  contextMenuState.targetOutlineIndex = index;
+
+  const outlineItem = currentOutline[index];
+  const gotoItem = menu.querySelector('[data-action="goto"]');
+  if (gotoItem) {
+    if (outlineItem && outlineItem.page) {
+      gotoItem.classList.remove('context-menu-item-disabled');
+    } else {
+      gotoItem.classList.add('context-menu-item-disabled');
+    }
+  }
+
+  showMenuAtPosition(menu, x, y);
+}
+
+function showMenuAtPosition(menu, x, y) {
+  hideContextMenu();
+
+  menu.classList.add('visible');
+
+  const menuRect = menu.getBoundingClientRect();
+  const windowWidth = window.innerWidth;
+  const windowHeight = window.innerHeight;
+
+  let posX = x;
+  let posY = y;
+
+  if (x + menuRect.width > windowWidth) {
+    posX = windowWidth - menuRect.width - 10;
+  }
+  if (y + menuRect.height > windowHeight) {
+    posY = windowHeight - menuRect.height - 10;
+  }
+
+  menu.style.left = `${posX}px`;
+  menu.style.top = `${posY}px`;
+}
+
+function hideContextMenu() {
+  document.querySelectorAll('.context-menu').forEach(menu => {
+    menu.classList.remove('visible');
+  });
+}
+
+async function handleContextMenuClick(e) {
+  const menuItem = e.target.closest('.context-menu-item');
+  if (!menuItem) return;
+
+  const action = menuItem.dataset.action;
+  const menuId = e.currentTarget.id;
+
+  hideContextMenu();
+
+  if (menuId === 'thumbnailContextMenu' || menuId === 'contextMenu') {
+    await handleThumbnailContextAction(action);
+  } else if (menuId === 'outlineContextMenu') {
+    handleOutlineContextAction(action);
+  }
+}
+
+async function handleThumbnailContextAction(action) {
+  const pageNum = contextMenuState.targetPage;
+  const selectedPages = Array.from(contextMenuState.selectedPages);
+
+  switch (action) {
+    case 'goto':
+      if (pageNum >= 0) goToPage(pageNum);
+      break;
+
+    case 'selectRange':
+      if (pageNum >= 0) {
+        selectPageRange(pageNum);
+      }
+      break;
+
+    case 'rotateLeft':
+      await handleRotatePage(-90, [pageNum]);
+      break;
+
+    case 'rotateRight':
+      await handleRotatePage(90, [pageNum]);
+      break;
+
+    case 'extract':
+      await handleExtractPage(pageNum);
+      break;
+
+    case 'duplicate':
+      await handleDuplicatePage(pageNum);
+      break;
+
+    case 'delete':
+      const pagesToDelete = selectedPages.length > 1 ? selectedPages : [pageNum];
+      await handleDeletePages(pagesToDelete);
+      break;
+  }
+}
+
+function handleOutlineContextAction(action) {
+  const index = contextMenuState.targetOutlineIndex;
+  const outlineItem = currentOutline[index];
+
+  switch (action) {
+    case 'goto':
+      if (outlineItem && outlineItem.page) {
+        goToPage(outlineItem.page);
+      }
+      break;
+
+    case 'copyTitle':
+      if (outlineItem && outlineItem.title) {
+        navigator.clipboard.writeText(outlineItem.title).then(() => {
+          updateStatus('标题已复制到剪贴板');
+        }).catch(err => {
+          console.error('Failed to copy title:', err);
+        });
+      }
+      break;
+  }
+}
+
+function selectPageRange(startPage) {
+  const endPage = prompt(`选择页面范围\n起始页：${startPage + 1}\n请输入结束页码（1-${totalPages}）：`, totalPages);
+  if (endPage === null) return;
+
+  const end = parseInt(endPage);
+  if (isNaN(end) || end < 1 || end > totalPages) {
+    updateStatus('无效的页码');
+    return;
+  }
+
+  contextMenuState.selectedPages.clear();
+  for (let i = startPage; i < end; i++) {
+    contextMenuState.selectedPages.add(i);
+  }
+
+  updateThumbnailSelection();
+  updateStatus(`已选择 ${contextMenuState.selectedPages.size} 页`);
+}
+
+function updateThumbnailSelection() {
+  document.querySelectorAll('.thumbnail-item').forEach(item => {
+    const page = parseInt(item.dataset.page);
+    if (contextMenuState.selectedPages.has(page)) {
+      item.classList.add('selected');
+    } else {
+      item.classList.remove('selected');
+    }
+  });
+}
+
+// Drag and drop state for thumbnail reordering
+let dragState = {
+  draggedItem: null,
+  draggedPage: -1,
+  placeholder: null
+};
+
+function handleThumbnailDragStart(e) {
+  const thumbnailItem = e.target.closest('.thumbnail-item');
+  if (!thumbnailItem) return;
+
+  dragState.draggedItem = thumbnailItem;
+  dragState.draggedPage = parseInt(thumbnailItem.dataset.page);
+
+  thumbnailItem.classList.add('dragging');
+
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', dragState.draggedPage.toString());
+
+  // Create placeholder element
+  dragState.placeholder = document.createElement('div');
+  dragState.placeholder.className = 'thumbnail-placeholder';
+}
+
+function handleThumbnailDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+
+  const thumbnailItem = e.target.closest('.thumbnail-item');
+  if (!thumbnailItem || thumbnailItem === dragState.draggedItem) return;
+
+  const rect = thumbnailItem.getBoundingClientRect();
+  const midY = rect.top + rect.height / 2;
+
+  if (e.clientY < midY) {
+    thumbnailItem.classList.add('drop-above');
+    thumbnailItem.classList.remove('drop-below');
+  } else {
+    thumbnailItem.classList.add('drop-below');
+    thumbnailItem.classList.remove('drop-above');
+  }
+}
+
+function handleThumbnailDragLeave(e) {
+  const thumbnailItem = e.target.closest('.thumbnail-item');
+  if (thumbnailItem) {
+    thumbnailItem.classList.remove('drop-above', 'drop-below');
+  }
+}
+
+async function handleThumbnailDrop(e) {
+  e.preventDefault();
+
+  const targetItem = e.target.closest('.thumbnail-item');
+  if (!targetItem || targetItem === dragState.draggedItem) return;
+
+  const targetPage = parseInt(targetItem.dataset.page);
+  const fromPage = dragState.draggedPage;
+
+  if (fromPage === targetPage) return;
+
+  // Determine drop position
+  const rect = targetItem.getBoundingClientRect();
+  const midY = rect.top + rect.height / 2;
+  const dropAbove = e.clientY < midY;
+
+  // Calculate new position (0-indexed)
+  let toIndex = targetPage - 1;
+  if (!dropAbove) {
+    toIndex = targetPage;
+  }
+
+  // Adjust for the removed page
+  const fromIndex = fromPage - 1;
+  if (toIndex > fromIndex) {
+    toIndex--;
+  }
+
+  // Clear visual indicators
+  targetItem.classList.remove('drop-above', 'drop-below');
+
+  // Perform the page move
+  await handleMovePage(fromIndex, toIndex);
+}
+
+function handleThumbnailDragEnd(e) {
+  // Clean up
+  if (dragState.draggedItem) {
+    dragState.draggedItem.classList.remove('dragging');
+  }
+
+  document.querySelectorAll('.thumbnail-item').forEach(item => {
+    item.classList.remove('drop-above', 'drop-below');
+  });
+
+  dragState.draggedItem = null;
+  dragState.draggedPage = -1;
+  dragState.placeholder = null;
+}
+
+async function handleMovePage(fromIndex, toIndex) {
+  if (!currentPdfPath) return;
+
+  if (fromIndex === toIndex) return;
+
+  try {
+    updateStatus(`正在移动页面 ${fromIndex + 1} 到 ${toIndex + 1}...`);
+
+    const result = await window.pdfAPI.movePage(currentPdfPath, fromIndex, toIndex);
+
+    // Save the modified PDF back to the file
+    await window.pdfAPI.writeFile(currentPdfPath, Array.from(result));
+
+    // Reload the PDF
+    await reloadCurrentPDF();
+
+    // Go to the moved page
+    goToPage(toIndex + 1);
+
+    updateStatus(`页面已移动到第 ${toIndex + 1} 页`);
+  } catch (error) {
+    console.error('Failed to move page:', error);
+    handleError(error);
+    updateStatus('移动页面失败');
+  }
+}
+
+async function handleExtractPage(pageNum) {
+  if (!currentPdfPath || pageNum < 0) return;
+
+  try {
+    updateStatus(`正在提取第 ${pageNum + 1} 页...`);
+
+    const result = await window.pdfAPI.splitPDF(currentPdfPath, [pageNum + 1]);
+
+    const saveResult = await window.pdfAPI.savePDF(result);
+    if (saveResult) {
+      updateStatus(`第 ${pageNum + 1} 页已提取并保存`);
+    }
+  } catch (error) {
+    console.error('Failed to extract page:', error);
+    handleError(error);
+  }
+}
+
+async function handleDuplicatePage(pageNum) {
+  if (!currentPdfPath || pageNum < 0) return;
+
+  try {
+    updateStatus(`正在复制第 ${pageNum + 1} 页...`);
+
+    const pdfBytes = await window.pdfAPI.getPdfBytes(currentPdfPath);
+    const { PDFDocument } = require('pdf-lib');
+    const srcDoc = await PDFDocument.load(pdfBytes);
+    const newDoc = await PDFDocument.create();
+
+    const [copiedPage] = await newDoc.copyPages(srcDoc, [pageNum]);
+    newDoc.addPage(copiedPage);
+
+    const newPdfBytes = await newDoc.save();
+
+    const saveResult = await window.pdfAPI.savePDF(Buffer.from(newPdfBytes));
+    if (saveResult) {
+      updateStatus(`第 ${pageNum + 1} 页已复制为新文件`);
+    }
+  } catch (error) {
+    console.error('Failed to duplicate page:', error);
+    handleError(error);
+  }
+}
+
+async function handleDeletePages(pageNumbers) {
+  if (!currentPdfPath || pageNumbers.length === 0) return;
+
+  const sortedPages = [...pageNumbers].sort((a, b) => b - a);
+  const pageList = sortedPages.map(p => p + 1).join(', ');
+
+  const confirmed = confirm(`确定要删除以下页面吗？\n第 ${pageList} 页\n\n此操作不可撤销。`);
+  if (!confirmed) return;
+
+  try {
+    updateStatus(`正在删除页面...`);
+
+    const result = await window.pdfAPI.deletePages(currentPdfPath, sortedPages.map(p => p + 1));
+
+    contextMenuState.selectedPages.clear();
+
+    await reloadCurrentPDF();
+
+    updateStatus(`已删除 ${sortedPages.length} 页`);
+  } catch (error) {
+    console.error('Failed to delete pages:', error);
+    handleError(error);
+  }
+}
+
+async function reloadCurrentPDF() {
+  if (!currentPdfPath) return;
+
+  const path = currentPdfPath;
+  currentPdfPath = null;
+
+  await handleSelectedFiles([{ path, name: path.split('/').pop() }]);
 }
 
 // Bookmarks state
@@ -1658,6 +2071,7 @@ async function generateThumbnails() {
     const thumbnailItem = document.createElement('div');
     thumbnailItem.className = 'thumbnail-item';
     thumbnailItem.dataset.page = i;
+    thumbnailItem.draggable = true;
 
     const canvas = document.createElement('canvas');
     canvas.className = 'thumbnail-canvas';
@@ -1691,6 +2105,13 @@ async function generateThumbnails() {
         goToPage(i);
       }
     });
+
+    // Add drag and drop handlers
+    thumbnailItem.addEventListener('dragstart', handleThumbnailDragStart);
+    thumbnailItem.addEventListener('dragover', handleThumbnailDragOver);
+    thumbnailItem.addEventListener('dragleave', handleThumbnailDragLeave);
+    thumbnailItem.addEventListener('drop', handleThumbnailDrop);
+    thumbnailItem.addEventListener('dragend', handleThumbnailDragEnd);
   }
 
   // Start lazy rendering

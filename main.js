@@ -1,6 +1,6 @@
 const { app, BrowserWindow, ipcMain, dialog, nativeImage } = require('electron');
 const path = require('path');
-const { mergePDFs, splitPDF, addWatermark, loadPDF, applyEdits, rotatePDF, deletePages, protectPDF, getBookmarks, addBookmarks } = require('./pdf-utils');
+const { mergePDFs, splitPDF, addWatermark, loadPDF, applyEdits, rotatePDF, deletePages, protectPDF, getBookmarks, addBookmarks, movePage } = require('./pdf-utils');
 const OCREngine = require('./ocr-engine');
 const { validateString, validateArray, validateNumber, validateBuffer, validateObject } = require('./validation');
 const fs = require('fs').promises;
@@ -266,6 +266,14 @@ ipcMain.handle('pdf:addBookmarks', safeIpcHandler('pdf:addBookmarks', (_, filePa
   validateFilePath(filePath);
   validateArray(bookmarks, 'bookmarks', 1000);
   return addBookmarks(filePath, bookmarks);
+}));
+
+// Move PDF page
+ipcMain.handle('pdf:movePage', safeIpcHandler('pdf:movePage', (_, filePath, fromIndex, toIndex) => {
+  validateFilePath(filePath);
+  validateNumber(fromIndex, 'fromIndex', 0, 100000);
+  validateNumber(toIndex, 'toIndex', 0, 100000);
+  return movePage(filePath, fromIndex, toIndex);
 }));
 
 // Settings IPC handlers

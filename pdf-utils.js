@@ -827,6 +827,48 @@ async function addBookmarks(filePath, bookmarks) {
   return Buffer.from(await pdfDoc.save());
 }
 
+async function movePage(filePath, fromIndex, toIndex) {
+  validateString(filePath, 'filePath');
+  validateNumber(fromIndex, 'fromIndex', 0, 100000);
+  validateNumber(toIndex, 'toIndex', 0, 100000);
+
+  let fileData;
+  let pdfDoc;
+
+  try {
+    fileData = await fs.readFile(filePath);
+    pdfDoc = await PDFDocument.load(fileData);
+  } catch (error) {
+    throw new Error(`Failed to read PDF file: ${error.message}`);
+  }
+
+  const totalPages = pdfDoc.getPageCount();
+  
+  if (fromIndex < 0 || fromIndex >= totalPages) {
+    throw new Error(`Invalid fromIndex: ${fromIndex}. PDF has ${totalPages} pages.`);
+  }
+  if (toIndex < 0 || toIndex >= totalPages) {
+    throw new Error(`Invalid toIndex: ${toIndex}. PDF has ${totalPages} pages.`);
+  }
+
+  if (fromIndex === toIndex) {
+    return Buffer.from(await pdfDoc.save());
+  }
+
+  const pages = pdfDoc.getPages();
+  const pageToMove = pages[fromIndex];
+  
+  pdfDoc.removePage(fromIndex);
+  
+  if (toIndex > fromIndex) {
+    pdfDoc.insertPage(toIndex - 1, pageToMove);
+  } else {
+    pdfDoc.insertPage(toIndex, pageToMove);
+  }
+
+  return Buffer.from(await pdfDoc.save());
+}
+
 module.exports = {
   mergePDFs,
   splitPDF,
@@ -838,5 +880,6 @@ module.exports = {
   protectPDF,
   getBookmarks,
   addBookmarks,
+  movePage,
   _resetMergePromise
 };

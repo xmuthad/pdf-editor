@@ -76,6 +76,12 @@ contextBridge.exposeInMainWorld('pdfAPI', {
     if (!Array.isArray(bookmarks)) throw new Error('bookmarks must be an array');
     return ipcRenderer.invoke('pdf:addBookmarks', filePath, bookmarks);
   },
+  movePage: (filePath, fromIndex, toIndex) => {
+    if (typeof filePath !== 'string' || !filePath) throw new Error('filePath must be a non-empty string');
+    if (typeof fromIndex !== 'number' || fromIndex < 0) throw new Error('fromIndex must be a non-negative number');
+    if (typeof toIndex !== 'number' || toIndex < 0) throw new Error('toIndex must be a non-negative number');
+    return ipcRenderer.invoke('pdf:movePage', filePath, fromIndex, toIndex);
+  },
   getSettings: () => ipcRenderer.invoke('settings:get'),
   setSettings: (settings) => {
     if (typeof settings !== 'object' || settings === null || Array.isArray(settings)) throw new Error('settings must be a valid object');

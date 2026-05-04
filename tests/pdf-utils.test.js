@@ -336,4 +336,56 @@ describe('pdf-utils', () => {
       expect(result.length).toBeGreaterThan(0);
     });
   });
+
+  describe('movePage', () => {
+    it('should move page from one position to another', async () => {
+      const { movePage, mergePDFs, loadPDF } = require('../pdf-utils');
+      
+      // Create a multi-page PDF for testing
+      const mergedPdf = await mergePDFs([testPdfPath, testPdfPath, testPdfPath]);
+      const tmpPath = path.join(__dirname, 'test-move.pdf');
+      await fs.writeFile(tmpPath, mergedPdf);
+
+      try {
+        const docInfo = await loadPDF(tmpPath);
+        expect(docInfo.pageCount).toBeGreaterThanOrEqual(3);
+
+        // Move page 0 to position 2
+        const result = await movePage(tmpPath, 0, 2);
+        expect(Buffer.isBuffer(result)).toBe(true);
+        expect(result.length).toBeGreaterThan(0);
+
+        // Verify page count remains the same
+        const tmpResultPath = path.join(__dirname, 'test-moved.pdf');
+        await fs.writeFile(tmpResultPath, result);
+        const movedDocInfo = await loadPDF(tmpResultPath);
+        expect(movedDocInfo.pageCount).toBe(docInfo.pageCount);
+        await fs.unlink(tmpResultPath).catch(() => {});
+      } finally {
+        await fs.unlink(tmpPath).catch(() => {});
+      }
+    });
+
+    it('should return unmodified PDF when moving to same position', async () => {
+      const { movePage } = require('../pdf-utils');
+      const result = await movePage(testPdfPath, 0, 0);
+
+      expect(Buffer.isBuffer(result)).toBe(true);
+    });
+
+    it('should throw error for invalid fromIndex', async () => {
+      const { movePage } = require('../pdf-utils');
+      await expect(movePage(testPdfPath, -1, 0)).rejects.toThrow();
+    });
+
+    it('should throw error for invalid toIndex', async () => {
+      const { movePage } = require('../pdf-utils');
+      await expect(movePage(testPdfPath, 0, 99999)).rejects.toThrow();
+    });
+
+    it('should throw error for invalid file path', async () => {
+      const { movePage } = require('../pdf-utils');
+      await expect(movePage('/nonexistent.pdf', 0, 1)).rejects.toThrow();
+    });
+  });
 });
