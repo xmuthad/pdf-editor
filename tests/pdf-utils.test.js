@@ -388,4 +388,76 @@ describe('pdf-utils', () => {
       await expect(movePage('/nonexistent.pdf', 0, 1)).rejects.toThrow();
     });
   });
+
+  describe('addPageNumbers', () => {
+    it('should add page numbers to PDF', async () => {
+      const { addPageNumbers, mergePDFs, loadPDF } = require('../pdf-utils');
+      
+      // Create a multi-page PDF for testing
+      const mergedPdf = await mergePDFs([testPdfPath, testPdfPath]);
+      const tmpPath = path.join(__dirname, 'test-pagenum.pdf');
+      await fs.writeFile(tmpPath, mergedPdf);
+
+      try {
+        const result = await addPageNumbers(tmpPath, {
+          format: 'simple',
+          position: 'bottom-center',
+          fontSize: 12
+        });
+        
+        expect(Buffer.isBuffer(result)).toBe(true);
+        expect(result.length).toBeGreaterThan(0);
+      } finally {
+        await fs.unlink(tmpPath).catch(() => {});
+      }
+    });
+
+    it('should support different formats', async () => {
+      const { addPageNumbers } = require('../pdf-utils');
+      
+      const formats = ['page', 'total', 'simple', 'custom'];
+      
+      for (const format of formats) {
+        const result = await addPageNumbers(testPdfPath, {
+          format,
+          customFormat: 'Page {page}'
+        });
+        expect(Buffer.isBuffer(result)).toBe(true);
+      }
+    });
+
+    it('should support different positions', async () => {
+      const { addPageNumbers } = require('../pdf-utils');
+      
+      const positions = [
+        'bottom-center', 'bottom-left', 'bottom-right',
+        'top-center', 'top-left', 'top-right'
+      ];
+      
+      for (const position of positions) {
+        const result = await addPageNumbers(testPdfPath, { position });
+        expect(Buffer.isBuffer(result)).toBe(true);
+      }
+    });
+
+    it('should support skip first page option', async () => {
+      const { addPageNumbers, mergePDFs } = require('../pdf-utils');
+      
+      const mergedPdf = await mergePDFs([testPdfPath, testPdfPath]);
+      const tmpPath = path.join(__dirname, 'test-skip.pdf');
+      await fs.writeFile(tmpPath, mergedPdf);
+
+      try {
+        const result = await addPageNumbers(tmpPath, { skipFirst: true });
+        expect(Buffer.isBuffer(result)).toBe(true);
+      } finally {
+        await fs.unlink(tmpPath).catch(() => {});
+      }
+    });
+
+    it('should throw error for invalid file path', async () => {
+      const { addPageNumbers } = require('../pdf-utils');
+      await expect(addPageNumbers('/nonexistent.pdf', {})).rejects.toThrow();
+    });
+  });
 });

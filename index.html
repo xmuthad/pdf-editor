@@ -396,6 +396,7 @@
             <button class="action-btn" id="quickMergeBtn">合并 PDF</button>
             <button class="action-btn" id="quickSplitBtn">拆分 PDF</button>
             <button class="action-btn" id="quickWatermarkBtn">添加水印</button>
+            <button class="action-btn" id="quickPageNumbersBtn">添加页码</button>
           </div>
         </div>
       </div>
@@ -667,6 +668,61 @@
       <div class="modal-footer">
         <button class="btn" id="cancelProtectModal">取消</button>
         <button class="btn btn-primary" id="confirmProtectBtn">确定加密</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Page Numbers Modal -->
+  <div class="modal-overlay" id="pageNumbersModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>添加页码</h3>
+        <button class="modal-close" id="closePageNumbersModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="pageNumberFormat">页码格式</label>
+          <select id="pageNumberFormat" class="form-input">
+            <option value="simple">{page} / {total}</option>
+            <option value="page">Page {page}</option>
+            <option value="total">Page {page} of {total}</option>
+            <option value="custom">自定义格式</option>
+          </select>
+        </div>
+        <div class="form-group" id="customFormatGroup" style="display: none;">
+          <label for="customPageFormat">自定义格式</label>
+          <input type="text" id="customPageFormat" class="form-input" placeholder="使用 {page} 和 {total}" value="{page} / {total}" />
+          <p class="form-hint">使用 {page} 表示当前页码，{total} 表示总页数</p>
+        </div>
+        <div class="form-group">
+          <label for="pageNumberPosition">位置</label>
+          <select id="pageNumberPosition" class="form-input">
+            <option value="bottom-center">底部居中</option>
+            <option value="bottom-left">底部左侧</option>
+            <option value="bottom-right">底部右侧</option>
+            <option value="top-center">顶部居中</option>
+            <option value="top-left">顶部左侧</option>
+            <option value="top-right">顶部右侧</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="pageNumberFontSize">字体大小</label>
+          <div class="slider-container">
+            <input type="range" id="pageNumberFontSize" min="8" max="24" value="12">
+            <span id="pageNumberFontSizeValue">12</span>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="pageNumberStart">起始页码</label>
+          <input type="number" id="pageNumberStart" class="form-input" min="1" value="1" />
+        </div>
+        <div class="form-group checkbox-group">
+          <label><input type="checkbox" id="skipFirstPage"> 跳过第一页</label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" id="cancelPageNumbersModal">取消</button>
+        <button class="btn btn-primary" id="confirmPageNumbersBtn">确定添加</button>
       </div>
     </div>
   </div>

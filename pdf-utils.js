@@ -869,6 +869,99 @@ async function movePage(filePath, fromIndex, toIndex) {
   return Buffer.from(await pdfDoc.save());
 }
 
+async function addPageNumbers(filePath, options = {}) {
+  validateString(filePath, 'filePath');
+
+  let fileData;
+  let pdfDoc;
+
+  try {
+    fileData = await fs.readFile(filePath);
+    pdfDoc = await PDFDocument.load(fileData);
+  } catch (error) {
+    throw new Error(`Failed to read PDF file: ${error.message}`);
+  }
+
+  const pages = pdfDoc.getPages();
+  const totalPages = pages.length;
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+
+  const format = options.format || 'simple';
+  const position = options.position || 'bottom-center';
+  const fontSize = options.fontSize || 12;
+  const startPage = options.startPage || 1;
+  const skipFirst = options.skipFirst || false;
+  const margin = options.margin || 30;
+
+  for (let i = 0; i < totalPages; i++) {
+    if (skipFirst && i === 0) continue;
+
+    const page = pages[i];
+    const { width, height } = page.getSize();
+    const pageNum = i + startPage;
+    
+    let text;
+    switch (format) {
+      case 'page':
+        text = `Page ${pageNum}`;
+        break;
+      case 'total':
+        text = `Page ${pageNum} of ${totalPages}`;
+        break;
+      case 'simple':
+        text = `${pageNum} / ${totalPages}`;
+        break;
+      case 'custom':
+        text = (options.customFormat || '{page} / {total}')
+          .replace('{page}', pageNum)
+          .replace('{total}', totalPages);
+        break;
+      default:
+        text = `${pageNum}`;
+    }
+
+    const textWidth = font.widthOfTextAtSize(text, fontSize);
+    let x, y;
+
+    switch (position) {
+      case 'bottom-left':
+        x = margin;
+        y = margin;
+        break;
+      case 'bottom-right':
+        x = width - textWidth - margin;
+        y = margin;
+        break;
+      case 'top-center':
+        x = (width - textWidth) / 2;
+        y = height - margin;
+        break;
+      case 'top-left':
+        x = margin;
+        y = height - margin;
+        break;
+      case 'top-right':
+        x = width - textWidth - margin;
+        y = height - margin;
+        break;
+      case 'bottom-center':
+      default:
+        x = (width - textWidth) / 2;
+        y = margin;
+    }
+
+    page.drawText(text, {
+      x,
+      y,
+      size: fontSize,
+      font,
+      color: rgb(0, 0, 0)
+    });
+  }
+
+  return Buffer.from(await pdfDoc.save());
+}
+
 module.exports = {
   mergePDFs,
   splitPDF,
@@ -881,5 +974,6 @@ module.exports = {
   getBookmarks,
   addBookmarks,
   movePage,
+  addPageNumbers,
   _resetMergePromise
 };

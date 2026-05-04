@@ -82,6 +82,11 @@ contextBridge.exposeInMainWorld('pdfAPI', {
     if (typeof toIndex !== 'number' || toIndex < 0) throw new Error('toIndex must be a non-negative number');
     return ipcRenderer.invoke('pdf:movePage', filePath, fromIndex, toIndex);
   },
+  addPageNumbers: (filePath, options) => {
+    if (typeof filePath !== 'string' || !filePath) throw new Error('filePath must be a non-empty string');
+    if (options !== undefined && (typeof options !== 'object' || options === null || Array.isArray(options))) throw new Error('options must be a valid object');
+    return ipcRenderer.invoke('pdf:addPageNumbers', filePath, options);
+  },
   getSettings: () => ipcRenderer.invoke('settings:get'),
   setSettings: (settings) => {
     if (typeof settings !== 'object' || settings === null || Array.isArray(settings)) throw new Error('settings must be a valid object');

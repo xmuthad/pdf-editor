@@ -911,10 +911,12 @@ function initEventListeners() {
   const quickMergeBtn = document.getElementById('quickMergeBtn');
   const quickSplitBtn = document.getElementById('quickSplitBtn');
   const quickWatermarkBtn = document.getElementById('quickWatermarkBtn');
+  const quickPageNumbersBtn = document.getElementById('quickPageNumbersBtn');
 
   if (quickMergeBtn) quickMergeBtn.addEventListener('click', handleMerge);
   if (quickSplitBtn) quickSplitBtn.addEventListener('click', handleSplit);
   if (quickWatermarkBtn) quickWatermarkBtn.addEventListener('click', handleWatermark);
+  if (quickPageNumbersBtn) quickPageNumbersBtn.addEventListener('click', openPageNumbersModal);
 
   // Select image button - use native file picker
   const selectImageBtn = document.getElementById('selectImageBtn');
@@ -1970,6 +1972,42 @@ function renderOutline() {
   if (closeProtectModal) closeProtectModal.addEventListener('click', closeProtectModalFunc);
   if (cancelProtectModal) cancelProtectModal.addEventListener('click', closeProtectModalFunc);
   if (confirmProtectBtn) confirmProtectBtn.addEventListener('click', performProtect);
+
+  // Page Numbers modal event listeners
+  const pageNumbersModal = document.getElementById('pageNumbersModal');
+  const closePageNumbersModal = document.getElementById('closePageNumbersModal');
+  const cancelPageNumbersModal = document.getElementById('cancelPageNumbersModal');
+  const confirmPageNumbersBtn = document.getElementById('confirmPageNumbersBtn');
+  const pageNumberFormat = document.getElementById('pageNumberFormat');
+  const customFormatGroup = document.getElementById('customFormatGroup');
+  const pageNumberFontSize = document.getElementById('pageNumberFontSize');
+  const pageNumberFontSizeValue = document.getElementById('pageNumberFontSizeValue');
+
+  if (pageNumberFormat) {
+    pageNumberFormat.addEventListener('change', (e) => {
+      if (customFormatGroup) {
+        customFormatGroup.style.display = e.target.value === 'custom' ? 'block' : 'none';
+      }
+    });
+  }
+
+  if (pageNumberFontSize && pageNumberFontSizeValue) {
+    pageNumberFontSize.addEventListener('input', (e) => {
+      pageNumberFontSizeValue.textContent = e.target.value;
+    });
+  }
+
+  function openPageNumbersModal() {
+    if (pageNumbersModal) pageNumbersModal.classList.add('active');
+  }
+
+  function closePageNumbersModalFunc() {
+    if (pageNumbersModal) pageNumbersModal.classList.remove('active');
+  }
+
+  if (closePageNumbersModal) closePageNumbersModal.addEventListener('click', closePageNumbersModalFunc);
+  if (cancelPageNumbersModal) cancelPageNumbersModal.addEventListener('click', closePageNumbersModalFunc);
+  if (confirmPageNumbersBtn) confirmPageNumbersBtn.addEventListener('click', performAddPageNumbers);
 
    // Delete Page modal event listeners
    const deletePageModal = document.getElementById('deletePageModal');
@@ -3817,6 +3855,44 @@ async function performProtect() {
       await window.pdfAPI.writeFile(result.filePath, Array.from(protectedBuffer));
       updateStatus(`PDF 已加密保护，已保存到：${result.filePath}`);
       closeProtectModalFunc();
+    }
+  } catch (error) {
+    handleError(error);
+  }
+}
+
+async function performAddPageNumbers() {
+  try {
+    if (!currentPdfPath) {
+      alert('请先打开 PDF 文件');
+      return;
+    }
+
+    const format = document.getElementById('pageNumberFormat').value;
+    const position = document.getElementById('pageNumberPosition').value;
+    const fontSize = parseInt(document.getElementById('pageNumberFontSize').value) || 12;
+    const startPage = parseInt(document.getElementById('pageNumberStart').value) || 1;
+    const skipFirst = document.getElementById('skipFirstPage').checked;
+    const customFormat = document.getElementById('customPageFormat')?.value || '{page} / {total}';
+
+    const options = {
+      format,
+      position,
+      fontSize,
+      startPage,
+      skipFirst,
+      customFormat
+    };
+
+    updateStatus('正在添加页码...');
+    const result = await window.pdfAPI.addPageNumbers(currentPdfPath, options);
+
+    // Save the file with page numbers
+    const saveResult = await window.pdfAPI.saveDialog('numbered.pdf');
+    if (!saveResult.canceled && saveResult.filePath) {
+      await window.pdfAPI.writeFile(saveResult.filePath, Array.from(result));
+      updateStatus(`页码已添加，已保存到：${saveResult.filePath}`);
+      closePageNumbersModalFunc();
     }
   } catch (error) {
     handleError(error);
