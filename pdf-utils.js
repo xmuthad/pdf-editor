@@ -305,6 +305,42 @@ async function getPageDimensions(filePath, pageNum) {
   return { width, height, pageNum };
 }
 
+async function compressPDF(filePath, options = {}) {
+  validateString(filePath, 'filePath');
+
+  let fileData;
+  let pdfDoc;
+
+  try {
+    fileData = await fs.readFile(filePath);
+    pdfDoc = await PDFDocument.load(fileData, { 
+      ignoreEncryption: true,
+      updateMetadata: false
+    });
+  } catch (error) {
+    throw new Error(`Failed to read PDF file: ${error.message}`);
+  }
+
+  const originalSize = fileData.length;
+
+  // Compress by re-saving with optimization options
+  const compressedBytes = await pdfDoc.save({
+    useObjectStreams: true,
+    addDefaultPage: false,
+    objectsPerTick: options.objectsPerTick || 50,
+  });
+
+  const compressedSize = compressedBytes.length;
+  const compressionRatio = ((1 - compressedSize / originalSize) * 100).toFixed(1);
+
+  return {
+    data: Buffer.from(compressedBytes),
+    originalSize,
+    compressedSize,
+    compressionRatio
+  };
+}
+
 async function applyEdits(filePath, operations) {
   validateString(filePath, 'filePath');
   validateArray(operations, 'operations');
@@ -1162,5 +1198,6 @@ module.exports = {
   insertBlankPage,
   cropPages,
   getPageDimensions,
+  compressPDF,
   _resetMergePromise
 };

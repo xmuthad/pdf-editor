@@ -918,6 +918,10 @@ function initEventListeners() {
   if (quickWatermarkBtn) quickWatermarkBtn.addEventListener('click', handleWatermark);
   if (quickPageNumbersBtn) quickPageNumbersBtn.addEventListener('click', openPageNumbersModal);
 
+  // Compress PDF
+  const quickCompressBtn = document.getElementById('quickCompressBtn');
+  if (quickCompressBtn) quickCompressBtn.addEventListener('click', handleCompressPDF);
+
   // PDF Properties
   const savePropertiesBtn = document.getElementById('savePropertiesBtn');
   if (savePropertiesBtn) savePropertiesBtn.addEventListener('click', handleSaveProperties);
@@ -4143,6 +4147,34 @@ async function performCrop() {
     console.error('Failed to crop page:', error);
     handleError(error);
     updateStatus('裁剪页面失败');
+  }
+}
+
+async function handleCompressPDF() {
+  if (!currentPdfPath) {
+    alert('请先打开 PDF 文件');
+    return;
+  }
+
+  try {
+    updateStatus('正在压缩 PDF...');
+
+    const result = await window.pdfAPI.compressPDF(currentPdfPath);
+
+    // Save the compressed file
+    const saveResult = await window.pdfAPI.saveDialog('compressed.pdf');
+    if (!saveResult.canceled && saveResult.filePath) {
+      await window.pdfAPI.writeFile(saveResult.filePath, result.data);
+      
+      const originalMB = (result.originalSize / 1024 / 1024).toFixed(2);
+      const compressedMB = (result.compressedSize / 1024 / 1024).toFixed(2);
+      
+      updateStatus(`压缩完成: ${originalMB}MB → ${compressedMB}MB (节省 ${result.compressionRatio}%)`);
+    }
+  } catch (error) {
+    console.error('Failed to compress PDF:', error);
+    handleError(error);
+    updateStatus('压缩 PDF 失败');
   }
 }
 

@@ -92,6 +92,11 @@ contextBridge.exposeInMainWorld('pdfAPI', {
     if (typeof metadata !== 'object' || metadata === null || Array.isArray(metadata)) throw new Error('metadata must be a valid object');
     return ipcRenderer.invoke('pdf:setMetadata', filePath, metadata);
   },
+  compressPDF: (filePath, options) => {
+    if (typeof filePath !== 'string' || !filePath) throw new Error('filePath must be a non-empty string');
+    if (options !== undefined && (typeof options !== 'object' || options === null || Array.isArray(options))) throw new Error('options must be a valid object');
+    return ipcRenderer.invoke('pdf:compress', filePath, options);
+  },
   getSettings: () => ipcRenderer.invoke('settings:get'),
   setSettings: (settings) => {
     if (typeof settings !== 'object' || settings === null || Array.isArray(settings)) throw new Error('settings must be a valid object');

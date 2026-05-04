@@ -1,6 +1,6 @@
 const { app, BrowserWindow, ipcMain, dialog, nativeImage } = require('electron');
 const path = require('path');
-const { mergePDFs, splitPDF, addWatermark, loadPDF, applyEdits, rotatePDF, deletePages, protectPDF, getBookmarks, addBookmarks, movePage, addPageNumbers, setPDFMetadata, insertPages, insertBlankPage, cropPages, getPageDimensions } = require('./pdf-utils');
+const { mergePDFs, splitPDF, addWatermark, loadPDF, applyEdits, rotatePDF, deletePages, protectPDF, getBookmarks, addBookmarks, movePage, addPageNumbers, setPDFMetadata, insertPages, insertBlankPage, cropPages, getPageDimensions, compressPDF } = require('./pdf-utils');
 const OCREngine = require('./ocr-engine');
 const { validateString, validateArray, validateNumber, validateBuffer, validateObject } = require('./validation');
 const fs = require('fs').promises;
@@ -318,6 +318,19 @@ ipcMain.handle('pdf:getPageDimensions', safeIpcHandler('pdf:getPageDimensions', 
   validateFilePath(filePath);
   validateNumber(pageNum, 'pageNum', 1, 100000);
   return getPageDimensions(filePath, pageNum);
+}));
+
+// Compress PDF
+ipcMain.handle('pdf:compress', safeIpcHandler('pdf:compress', async (_, filePath, options) => {
+  validateFilePath(filePath);
+  if (options !== undefined) validateObject(options, 'options');
+  const result = await compressPDF(filePath, options);
+  return {
+    data: Array.from(result.data),
+    originalSize: result.originalSize,
+    compressedSize: result.compressedSize,
+    compressionRatio: result.compressionRatio
+  };
 }));
 
 // Settings IPC handlers
